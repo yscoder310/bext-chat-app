@@ -12,8 +12,9 @@ import {
   Center,
   Badge,
   Box,
+  Tooltip,
 } from '@mantine/core';
-import { IconSend, IconMoodSmile, IconPaperclip } from '@tabler/icons-react';
+import { IconSend, IconMoodSmile, IconPaperclip, IconUsers, IconEdit, IconCheck, IconX } from '@tabler/icons-react';
 import { 
   format, 
   isToday, 
@@ -27,10 +28,12 @@ import {
 import { useChat } from '../hooks/useChat';
 import { useSocket } from '../hooks/useSocket';
 import { useAppSelector } from '../store/hooks';
+import { useDisclosure } from '@mantine/hooks';
+import { GroupMembersModal } from './GroupMembersModal';
 
 const EmptyState = () => {
   return (
-    <Center h="calc(100vh - 60px)" style={{ backgroundColor: '#f8f9fa' }}>
+    <Center style={{ height: '100vh', maxHeight: 'calc(100vh - 60px)', backgroundColor: '#f8f9fa' }}>
       <Stack align="center" gap="xl">
         <Box
           style={{
@@ -75,11 +78,14 @@ const EmptyState = () => {
 
 export const ChatArea = () => {
   const [message, setMessage] = useState('');
+  const [isEditingGroupName, setIsEditingGroupName] = useState(false);
+  const [editedGroupName, setEditedGroupName] = useState('');
+  const [membersModalOpened, { open: openMembersModal, close: closeMembersModal }] = useDisclosure(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<number | null>(null);
   const isTypingRef = useRef(false);
   const lastConversationIdRef = useRef<string | null>(null);
-  const { activeConversation, activeMessages, activeTypingUsers, isLoadingMessages } = useChat();
+  const { activeConversation, activeMessages, activeTypingUsers, isLoadingMessages, updateGroupName, promoteToAdmin } = useChat();
   const { sendMessage: socketSendMessage, startTyping, stopTyping } = useSocket();
   const { user } = useAppSelector((state) => state.auth);
 
@@ -292,6 +298,22 @@ export const ChatArea = () => {
     return `Last seen ${diffDays}d ago`;
   };
 
+  // Get online members count for group chats
+  const getOnlineMembersCount = () => {
+    if (!activeConversation || activeConversation.type !== 'group') {
+      return null;
+    }
+    
+    if (!activeConversation.participants || !Array.isArray(activeConversation.participants)) {
+      return null;
+    }
+    
+    const onlineCount = activeConversation.participants.filter((p: any) => p?.isOnline).length;
+    const totalCount = activeConversation.participants.length;
+    
+    return { online: onlineCount, total: totalCount };
+  };
+
   // Format message timestamp with smart formatting like WhatsApp
   const formatMessageTime = (dateString: string | Date) => {
     const date = new Date(dateString);
@@ -347,6 +369,7 @@ export const ChatArea = () => {
 
   const isOtherUserOnline = getOtherUserStatus();
   const lastSeenText = getLastSeenText();
+  const groupMembersInfo = getOnlineMembersCount();
 
   if (!activeConversation) {
     return <EmptyState />;
@@ -354,7 +377,7 @@ export const ChatArea = () => {
 
   if (isLoadingMessages) {
     return (
-      <Center h="calc(100vh - 60px)" style={{ backgroundColor: '#f8f9fa' }}>
+      <Center style={{ height: '100vh', maxHeight: 'calc(100vh - 60px)', backgroundColor: '#f8f9fa' }}>
         <Stack align="center" gap="md">
           <Loader size="lg" color="blue" />
           <Text size="sm" c="dimmed">Loading messages...</Text>
@@ -364,95 +387,198 @@ export const ChatArea = () => {
   }
 
   return (
-    <Stack h="calc(100vh - 60px)" gap={0} style={{ backgroundColor: '#f8f9fa' }}>
+    <Stack 
+      gap={0} 
+      style={{ 
+        backgroundColor: '#f8f9fa',
+        height: '100vh',
+        maxHeight: 'calc(100vh - 60px)',
+        overflow: 'hidden',
+      }}
+    >
       {/* Header */}
       <Paper 
         p="lg" 
         shadow="sm" 
         radius={0}
         style={{
-          borderBottom: '1px solid #e9ecef',
+          borderBottom: '1px solid #dee2e6',
           backgroundColor: 'white',
+          flexShrink: 0,
+          background: 'linear-gradient(to bottom, #ffffff 0%, #f8f9fa 100%)',
         }}
       >
-        <Group>
-          <div style={{ position: 'relative' }}>
-            <Avatar 
-              size={48}
-              radius="xl"
-              color="blue"
-              styles={{
-                root: {
-                  border: '2px solid #e9ecef',
-                }
-              }}
-            >
-              {getConversationAvatar()}
-            </Avatar>
-            {activeConversation.type === 'one-to-one' && isOtherUserOnline !== null && (
-              <Box
-                style={{
-                  position: 'absolute',
-                  bottom: 2,
-                  right: 2,
-                  width: 14,
-                  height: 14,
-                  borderRadius: '50%',
-                  backgroundColor: isOtherUserOnline ? '#40c057' : '#868e96',
-                  border: '3px solid white',
-                  boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-                }}
-              />
-            )}
-          </div>
-          <div>
-            <Group gap={8} align="center">
-              <Text fw={600} size="lg">
-                {getConversationDisplayName()}
-              </Text>
-              {activeTypingUsers.length > 0 && (
-                <Text size="xs" c="blue" fw={500} style={{ fontStyle: 'italic' }}>
-                  typing...
-                </Text>
-              )}
-            </Group>
-            <Group gap={8}>
-              {activeConversation.type === 'one-to-one' && isOtherUserOnline !== null && (
-                <Badge
-                  size="sm"
-                  color={isOtherUserOnline ? 'green' : 'gray'}
-                  variant="light"
-                  leftSection={
-                    <Box
-                      style={{
-                        width: 6,
-                        height: 6,
-                        borderRadius: '50%',
-                        backgroundColor: isOtherUserOnline ? '#40c057' : '#868e96',
-                      }}
-                    />
+        <Group justify="space-between">
+          <Group>
+            <div style={{ position: 'relative' }}>
+              <Avatar 
+                size={48}
+                radius="xl"
+                color="blue"
+                styles={{
+                  root: {
+                    border: '2px solid #e9ecef',
                   }
-                >
-                  {isOtherUserOnline ? 'Online' : 'Offline'}
-                </Badge>
+                }}
+              >
+                {getConversationAvatar()}
+              </Avatar>
+              {activeConversation.type === 'one-to-one' && isOtherUserOnline !== null && (
+                <Box
+                  style={{
+                    position: 'absolute',
+                    bottom: 2,
+                    right: 2,
+                    width: 14,
+                    height: 14,
+                    borderRadius: '50%',
+                    backgroundColor: isOtherUserOnline ? '#40c057' : '#868e96',
+                    border: '3px solid white',
+                    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                  }}
+                />
               )}
-              {activeConversation.type === 'one-to-one' && !isOtherUserOnline && lastSeenText && (
-                <Text size="xs" c="dimmed">
-                  • {lastSeenText}
-                </Text>
-              )}
-            </Group>
-          </div>
+            </div>
+            <div>
+              <Group gap={8} align="center">
+                {activeConversation.type === 'group' && isEditingGroupName ? (
+                  <Group gap={4}>
+                    <TextInput
+                      value={editedGroupName}
+                      onChange={(e) => setEditedGroupName(e.target.value)}
+                      size="sm"
+                      styles={{ input: { fontWeight: 600 } }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          if (editedGroupName.trim() && activeConversation.id) {
+                            updateGroupName({ 
+                              conversationId: activeConversation.id, 
+                              groupName: editedGroupName.trim() 
+                            });
+                            setIsEditingGroupName(false);
+                          }
+                        } else if (e.key === 'Escape') {
+                          setIsEditingGroupName(false);
+                          setEditedGroupName(activeConversation.groupName || '');
+                        }
+                      }}
+                      autoFocus
+                    />
+                    <ActionIcon 
+                      color="green" 
+                      variant="subtle"
+                      onClick={() => {
+                        if (editedGroupName.trim() && activeConversation.id) {
+                          updateGroupName({ 
+                            conversationId: activeConversation.id, 
+                            groupName: editedGroupName.trim() 
+                          });
+                          setIsEditingGroupName(false);
+                        }
+                      }}
+                    >
+                      <IconCheck size={18} />
+                    </ActionIcon>
+                    <ActionIcon 
+                      color="red" 
+                      variant="subtle"
+                      onClick={() => {
+                        setIsEditingGroupName(false);
+                        setEditedGroupName(activeConversation.groupName || '');
+                      }}
+                    >
+                      <IconX size={18} />
+                    </ActionIcon>
+                  </Group>
+                ) : (
+                  <Group gap={4}>
+                    <Text fw={600} size="lg">
+                      {getConversationDisplayName()}
+                    </Text>
+                    {activeConversation.type === 'group' && user?.id === activeConversation.groupAdmin?.id && (
+                      <Tooltip label="Edit group name">
+                        <ActionIcon 
+                          variant="subtle" 
+                          size="sm"
+                          onClick={() => {
+                            setEditedGroupName(activeConversation.groupName || '');
+                            setIsEditingGroupName(true);
+                          }}
+                        >
+                          <IconEdit size={16} />
+                        </ActionIcon>
+                      </Tooltip>
+                    )}
+                  </Group>
+                )}
+                {activeTypingUsers.length > 0 && (
+                  <Text size="xs" c="blue" fw={500} style={{ fontStyle: 'italic' }}>
+                    typing...
+                  </Text>
+                )}
+              </Group>
+              <Group gap={8}>
+                {activeConversation.type === 'one-to-one' && isOtherUserOnline !== null && (
+                  <Badge
+                    size="sm"
+                    color={isOtherUserOnline ? 'green' : 'gray'}
+                    variant="light"
+                    leftSection={
+                      <Box
+                        style={{
+                          width: 6,
+                          height: 6,
+                          borderRadius: '50%',
+                          backgroundColor: isOtherUserOnline ? '#40c057' : '#868e96',
+                        }}
+                      />
+                    }
+                  >
+                    {isOtherUserOnline ? 'Online' : 'Offline'}
+                  </Badge>
+                )}
+                {activeConversation.type === 'one-to-one' && !isOtherUserOnline && lastSeenText && (
+                  <Text size="xs" c="dimmed">
+                    • {lastSeenText}
+                  </Text>
+                )}
+                {activeConversation.type === 'group' && groupMembersInfo && (
+                  <Text size="xs" c="dimmed">
+                    {groupMembersInfo.online}/{groupMembersInfo.total} members online
+                  </Text>
+                )}
+              </Group>
+            </div>
+          </Group>
+
+          {activeConversation.type === 'group' && (
+            <Tooltip label="View members">
+              <ActionIcon 
+                variant="subtle" 
+                size="lg"
+                onClick={openMembersModal}
+              >
+                <IconUsers size={20} />
+              </ActionIcon>
+            </Tooltip>
+          )}
         </Group>
       </Paper>
 
       {/* Messages Area */}
       <ScrollArea 
-        style={{ flex: 1 }} 
+        style={{ 
+          flex: 1, 
+          minHeight: 0,
+          background: 'linear-gradient(to bottom, #f8f9fa 0%, #e9ecef 100%)',
+        }} 
         p="md"
         styles={{
           viewport: {
             paddingBottom: '20px',
+            '& > div': {
+              display: 'block !important',
+            }
           }
         }}
       >
@@ -470,38 +596,67 @@ export const ChatArea = () => {
                 align="flex-start"
                 gap="xs"
                 wrap="nowrap"
+                style={{ width: '100%' }}
               >
                 {!isOwn && (
-                  <Avatar size={32} radius="xl" color="blue">
+                  <Avatar 
+                    size={36} 
+                    radius="xl" 
+                    color="blue"
+                    style={{
+                      flexShrink: 0,
+                      boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+                    }}
+                  >
                     {typeof msg.senderId === 'string' ? 'U' : msg.senderId.username[0].toUpperCase()}
                   </Avatar>
                 )}
                 <Paper
-                  p="sm"
-                  radius="lg"
-                  shadow="xs"
+                  p="xs"
+                  px="sm"
+                  radius="md"
+                  shadow="sm"
                   style={{
                     backgroundColor: isOwn ? '#228be6' : 'white',
                     color: isOwn ? 'white' : 'black',
-                    maxWidth: '70%',
+                    maxWidth: '65%',
                     border: isOwn ? 'none' : '1px solid #e9ecef',
                     wordBreak: 'break-word',
                     marginLeft: isOwn ? 'auto' : '0',
                     marginRight: isOwn ? '0' : 'auto',
+                    boxShadow: isOwn 
+                      ? '0 4px 12px rgba(34, 139, 230, 0.25)' 
+                      : '0 2px 8px rgba(0, 0, 0, 0.08)',
+                    position: 'relative',
                   }}
                 >
                   {!isOwn && typeof msg.senderId !== 'string' && (
-                    <Text size="xs" fw={600} c={isOwn ? 'rgba(255,255,255,0.9)' : 'dimmed'} mb={4}>
+                    <Text 
+                      size="xs" 
+                      fw={600} 
+                      c="#228be6"
+                      mb={4}
+                      style={{
+                        letterSpacing: '0.3px',
+                      }}
+                    >
                       {msg.senderId.username}
                     </Text>
                   )}
-                  <Text size="sm" style={{ whiteSpace: 'pre-wrap' }}>
+                  <Text 
+                    size="sm" 
+                    style={{ 
+                      whiteSpace: 'pre-wrap',
+                      lineHeight: 1.5,
+                      letterSpacing: '0.2px',
+                    }}
+                  >
                     {msg.content}
                   </Text>
                   <Group gap={4} mt={6} justify={isOwn ? 'flex-end' : 'flex-start'}>
                     <Text 
                       size="xs" 
-                      c={isOwn ? 'rgba(255,255,255,0.8)' : 'dimmed'} 
+                      c={isOwn ? 'rgba(255,255,255,0.85)' : 'dimmed'} 
                       fw={500}
                       style={{ 
                         fontSize: '10px',
@@ -510,9 +665,27 @@ export const ChatArea = () => {
                     >
                       {formatMessageTime(msg.createdAt)}
                     </Text>
+                    {isOwn && (
+                      <svg 
+                        width="14" 
+                        height="10" 
+                        viewBox="0 0 16 11" 
+                        fill="none"
+                        style={{ opacity: 0.85 }}
+                      >
+                        <path 
+                          d="M11.071.653a.75.75 0 0 1 1.058 0l3.854 3.854a.75.75 0 0 1 0 1.058l-3.854 3.854a.75.75 0 1 1-1.058-1.058l2.576-2.576H.75a.75.75 0 0 1 0-1.5h12.897L10.571 1.71A.75.75 0 0 1 11.071.653Z" 
+                          fill="rgba(255,255,255,0.85)"
+                        />
+                        <path 
+                          d="M5.071.653a.75.75 0 0 1 1.058 0l3.854 3.854a.75.75 0 0 1 0 1.058l-3.854 3.854a.75.75 0 1 1-1.058-1.058l2.576-2.576H.75a.75.75 0 0 1 0-1.5h6.897L5.571 1.71A.75.75 0 0 1 5.071.653Z" 
+                          fill="rgba(255,255,255,0.85)"
+                        />
+                      </svg>
+                    )}
                   </Group>
                 </Paper>
-                {isOwn && <div style={{ width: 32 }} />}
+                {isOwn && <div style={{ width: 36, flexShrink: 0 }} />}
               </Group>
             );
           })}
@@ -523,19 +696,29 @@ export const ChatArea = () => {
       {/* Input Area */}
       <Paper 
         p="md" 
-        shadow="sm"
+        shadow="md"
         radius={0}
         style={{
-          borderTop: '1px solid #e9ecef',
+          borderTop: '1px solid #dee2e6',
           backgroundColor: 'white',
+          flexShrink: 0,
         }}
       >
         <Group gap="xs" align="flex-end">
           <ActionIcon 
-            size={40} 
-            variant="subtle" 
+            size={42} 
+            variant="light" 
             color="gray"
             radius="xl"
+            style={{
+              transition: 'all 0.2s ease',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.transform = 'scale(1.05)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = 'scale(1)';
+            }}
           >
             <IconPaperclip size={20} />
           </ActionIcon>
@@ -554,11 +737,18 @@ export const ChatArea = () => {
             size="md"
             styles={{
               input: {
-                border: '1px solid #e9ecef',
+                border: '2px solid #e9ecef',
                 backgroundColor: '#f8f9fa',
+                fontSize: '14px',
+                padding: '12px 18px',
+                transition: 'all 0.2s ease',
                 '&:focus': {
                   borderColor: '#228be6',
                   backgroundColor: 'white',
+                  boxShadow: '0 0 0 3px rgba(34, 139, 230, 0.1)',
+                },
+                '&::placeholder': {
+                  color: '#adb5bd',
                 },
               },
             }}
@@ -566,26 +756,42 @@ export const ChatArea = () => {
           />
           
           <ActionIcon 
-            size={40} 
-            variant="subtle" 
+            size={42} 
+            variant="light" 
             color="gray"
             radius="xl"
+            style={{
+              transition: 'all 0.2s ease',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.transform = 'scale(1.05)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = 'scale(1)';
+            }}
           >
             <IconMoodSmile size={20} />
           </ActionIcon>
           
           <ActionIcon 
-            size={40} 
+            size={42} 
             onClick={handleSend} 
             disabled={!message.trim()}
             radius="xl"
             variant="filled"
             color="blue"
+            style={{
+              transition: 'all 0.2s ease',
+            }}
             styles={{
               root: {
                 '&:disabled': {
                   backgroundColor: '#e9ecef',
                   color: '#adb5bd',
+                },
+                '&:not(:disabled):hover': {
+                  transform: 'scale(1.05)',
+                  boxShadow: '0 4px 12px rgba(34, 139, 230, 0.3)',
                 },
               },
             }}
@@ -594,6 +800,21 @@ export const ChatArea = () => {
           </ActionIcon>
         </Group>
       </Paper>
+
+      {/* Group Members Modal */}
+      {activeConversation.type === 'group' && (
+        <GroupMembersModal
+          opened={membersModalOpened}
+          onClose={closeMembersModal}
+          conversation={activeConversation}
+          currentUserId={user?.id}
+          onPromoteToAdmin={(newAdminId) => {
+            if (activeConversation.id) {
+              promoteToAdmin({ conversationId: activeConversation.id, newAdminId });
+            }
+          }}
+        />
+      )}
     </Stack>
   );
 };

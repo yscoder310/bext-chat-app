@@ -42,4 +42,18 @@ export const conversationApi = {
   deleteConversation: async (conversationId: string): Promise<void> => {
     await axiosInstance.delete(`/conversations/${conversationId}`);
   },
+
+  updateGroupName: async (conversationId: string, groupName: string): Promise<Conversation> => {
+    const { data } = await axiosInstance.put(`/conversations/${conversationId}/name`, {
+      groupName,
+    });
+    return data.data;
+  },
+
+  promoteToAdmin: async (conversationId: string, newAdminId: string): Promise<Conversation> => {
+    const { data } = await axiosInstance.put(`/conversations/${conversationId}/admin`, {
+      newAdminId,
+    });
+    return data.data;
+  },
 };

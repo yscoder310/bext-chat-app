@@ -21,6 +21,7 @@ interface TypingTracker {
 
 const onlineUsers: OnlineUsers = {};
 const typingTimeouts: TypingTracker = {};
+let socketInstance: Server | null = null;
 
 export const initializeSocket = (httpServer: HTTPServer) => {
   const io = new Server(httpServer, {
@@ -339,7 +340,9 @@ export const initializeSocket = (httpServer: HTTPServer) => {
     });
   });
 
+  socketInstance = io;
   return io;
 };
 
 export const getOnlineUsers = () => onlineUsers;
+export const getSocketInstance = () => socketInstance;

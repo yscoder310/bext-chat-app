@@ -220,6 +220,22 @@ class SocketService {
     this.registerHandler('chat-request-rejected', callback);
   }
 
+  onGroupCreated(callback: (conversation: any) => void) {
+    const handler = (conversation: any) => {
+      console.log('👥 Group created:', conversation);
+      callback(conversation);
+    };
+    this.registerHandler('group-created', handler);
+  }
+
+  onGroupUpdated(callback: (conversation: any) => void) {
+    const handler = (conversation: any) => {
+      console.log('✏️ Group updated:', conversation);
+      callback(conversation);
+    };
+    this.registerHandler('group-updated', handler);
+  }
+
   // Remove event listeners
   offNewMessage() {
     this.socket?.off('new-message');

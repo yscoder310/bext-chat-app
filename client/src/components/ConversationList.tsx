@@ -10,19 +10,22 @@ import {
   Badge,
   ActionIcon,
   Loader,
+  Menu,
 } from '@mantine/core';
-import { IconSearch, IconPlus } from '@tabler/icons-react';
+import { IconSearch, IconPlus, IconUsers, IconUser } from '@tabler/icons-react';
 import { format, isToday, isYesterday, differenceInMinutes, differenceInDays } from 'date-fns';
 import { useChat } from '../hooks/useChat';
 import { useChatRequests } from '../hooks/useChatRequests';
 import { useDisclosure } from '@mantine/hooks';
 import { UserListModal } from './UserListModal';
+import { CreateGroupModal } from './CreateGroupModal';
 import { useAppSelector } from '../store/hooks';
 
 export const ConversationList = () => {
   const [search, setSearch] = useState('');
-  const [opened, { open, close }] = useDisclosure(false);
-  const { conversations, selectConversation, activeConversation, isLoadingConversations } =
+  const [userListOpened, { open: openUserList, close: closeUserList }] = useDisclosure(false);
+  const [groupModalOpened, { open: openGroupModal, close: closeGroupModal }] = useDisclosure(false);
+  const { conversations, selectConversation, activeConversation, isLoadingConversations, createGroup } =
     useChat();
   const { pendingRequests } = useChatRequests();
   const { typingUsers } = useAppSelector((state) => state.chat);
@@ -145,9 +148,22 @@ export const ConversationList = () => {
             onChange={(e) => setSearch(e.target.value)}
             style={{ flex: 1 }}
           />
-          <ActionIcon variant="filled" size="lg" onClick={open}>
-            <IconPlus size={18} />
-          </ActionIcon>
+          <Menu shadow="md" width={200}>
+            <Menu.Target>
+              <ActionIcon variant="filled" size="lg">
+                <IconPlus size={18} />
+              </ActionIcon>
+            </Menu.Target>
+
+            <Menu.Dropdown>
+              <Menu.Item leftSection={<IconUser size={16} />} onClick={openUserList}>
+                New Chat
+              </Menu.Item>
+              <Menu.Item leftSection={<IconUsers size={16} />} onClick={openGroupModal}>
+                New Group
+              </Menu.Item>
+            </Menu.Dropdown>
+          </Menu>
         </Group>
 
         {pendingRequests.length > 0 && (
@@ -204,8 +220,13 @@ export const ConversationList = () => {
                       truncate
                       style={{ fontStyle: getTypingStatus(conv) ? 'italic' : 'normal' }}
                     >
-                      {getLastMessageText(conv)}
+                      {getTypingStatus(conv) ? 'typing...' : getLastMessageText(conv)}
                     </Text>
+                    {conv.type === 'group' && conv.participants && (
+                      <Text size="xs" c="dimmed" mt={2}>
+                        {conv.participants.filter((p: any) => p.isOnline).length}/{conv.participants.length} online
+                      </Text>
+                    )}
                   </div>
                   {conv.unreadCount > 0 && (
                     <Badge color="blue" variant="filled" size="sm">
@@ -220,9 +241,17 @@ export const ConversationList = () => {
       </Stack>
 
       <UserListModal 
-        opened={opened} 
-        onClose={close}
+        opened={userListOpened} 
+        onClose={closeUserList}
         existingConversations={conversations}
+      />
+
+      <CreateGroupModal
+        opened={groupModalOpened}
+        onClose={closeGroupModal}
+        onCreateGroup={(groupName, participants) => {
+          createGroup({ groupName, participants });
+        }}
       />
     </>
   );

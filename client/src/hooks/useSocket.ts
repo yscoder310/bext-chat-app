@@ -9,6 +9,7 @@ import {
   setOnlineUsers,
   markMessagesAsRead,
   addConversation,
+  updateConversation,
 } from '../store/slices/chatSlice';
 import { socketService } from '../lib/socket';
 import { Message } from '../types';
@@ -76,6 +77,26 @@ export const useSocket = () => {
         dispatch(addConversation(conversation));
       } else {
         console.error('Invalid conversation data received:', conversation);
+      }
+    });
+
+    // Group created
+    socketService.onGroupCreated((conversation) => {
+      console.log('Group created, adding to conversations:', conversation);
+      if (conversation && conversation.id && conversation.participants && Array.isArray(conversation.participants)) {
+        dispatch(addConversation(conversation));
+      } else {
+        console.error('Invalid group conversation data received:', conversation);
+      }
+    });
+
+    // Group updated (name change or admin promotion)
+    socketService.onGroupUpdated((conversation) => {
+      console.log('Group updated, updating conversation:', conversation);
+      if (conversation && conversation.id && conversation.participants && Array.isArray(conversation.participants)) {
+        dispatch(updateConversation(conversation));
+      } else {
+        console.error('Invalid updated group conversation data received:', conversation);
       }
     });
 

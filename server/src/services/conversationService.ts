@@ -88,7 +88,39 @@ export class ConversationService {
       participants,
     });
 
-    return conversation;
+    // Populate and format the response
+    const populatedConversation = await Conversation.findById(conversation._id)
+      .populate('participants', 'username avatar isOnline lastSeen')
+      .populate('groupAdmin', 'username avatar');
+
+    if (!populatedConversation) {
+      throw new AppError('Failed to create group conversation', 500);
+    }
+
+    // Format the response
+    const unreadCount = populatedConversation.unreadCount.get(adminId) || 0;
+    return {
+      id: String(populatedConversation._id),
+      type: populatedConversation.type,
+      participants: populatedConversation.participants.map((p: any) => ({
+        id: String(p._id),
+        username: p.username,
+        avatar: p.avatar,
+        isOnline: p.isOnline,
+        lastSeen: p.lastSeen,
+      })),
+      groupName: populatedConversation.groupName,
+      groupAdmin: populatedConversation.groupAdmin ? {
+        id: String((populatedConversation.groupAdmin as any)._id),
+        username: (populatedConversation.groupAdmin as any).username,
+        avatar: (populatedConversation.groupAdmin as any).avatar,
+      } : undefined,
+      lastMessage: populatedConversation.lastMessage,
+      lastMessageAt: populatedConversation.lastMessageAt,
+      unreadCount,
+      createdAt: populatedConversation.createdAt,
+      updatedAt: populatedConversation.updatedAt,
+    };
   }
 
   static async getUserConversations(userId: string) {
@@ -239,5 +271,121 @@ export class ConversationService {
     await Conversation.findByIdAndDelete(conversationId);
 
     return { success: true };
+  }
+
+  static async updateGroupName(
+    conversationId: string,
+    adminId: string,
+    newGroupName: string
+  ) {
+    const conversation = await Conversation.findById(conversationId);
+
+    if (!conversation) {
+      throw new AppError('Conversation not found', 404);
+    }
+
+    if (conversation.type !== 'group') {
+      throw new AppError('Only group conversations can have their name updated', 400);
+    }
+
+    if (String(conversation.groupAdmin) !== adminId) {
+      throw new AppError('Only group admin can update the group name', 403);
+    }
+
+    conversation.groupName = newGroupName;
+    await conversation.save();
+
+    // Return formatted conversation
+    const populatedConversation = await Conversation.findById(conversationId)
+      .populate('participants', 'username avatar isOnline lastSeen')
+      .populate('groupAdmin', 'username avatar');
+
+    if (!populatedConversation) {
+      throw new AppError('Failed to retrieve updated conversation', 500);
+    }
+
+    const unreadCount = populatedConversation.unreadCount.get(adminId) || 0;
+    return {
+      id: String(populatedConversation._id),
+      type: populatedConversation.type,
+      participants: populatedConversation.participants.map((p: any) => ({
+        id: String(p._id),
+        username: p.username,
+        avatar: p.avatar,
+        isOnline: p.isOnline,
+        lastSeen: p.lastSeen,
+      })),
+      groupName: populatedConversation.groupName,
+      groupAdmin: populatedConversation.groupAdmin ? {
+        id: String((populatedConversation.groupAdmin as any)._id),
+        username: (populatedConversation.groupAdmin as any).username,
+        avatar: (populatedConversation.groupAdmin as any).avatar,
+      } : undefined,
+      lastMessage: populatedConversation.lastMessage,
+      lastMessageAt: populatedConversation.lastMessageAt,
+      unreadCount,
+      createdAt: populatedConversation.createdAt,
+      updatedAt: populatedConversation.updatedAt,
+    };
+  }
+
+  static async promoteToAdmin(
+    conversationId: string,
+    currentAdminId: string,
+    newAdminId: string
+  ) {
+    const conversation = await Conversation.findById(conversationId);
+
+    if (!conversation) {
+      throw new AppError('Conversation not found', 404);
+    }
+
+    if (conversation.type !== 'group') {
+      throw new AppError('Only group conversations have admins', 400);
+    }
+
+    if (String(conversation.groupAdmin) !== currentAdminId) {
+      throw new AppError('Only current admin can promote others', 403);
+    }
+
+    if (!conversation.participants.includes(newAdminId)) {
+      throw new AppError('New admin must be a participant of the group', 400);
+    }
+
+    conversation.groupAdmin = newAdminId;
+    await conversation.save();
+
+    // Return formatted conversation
+    const populatedConversation = await Conversation.findById(conversationId)
+      .populate('participants', 'username avatar isOnline lastSeen')
+      .populate('groupAdmin', 'username avatar');
+
+    if (!populatedConversation) {
+      throw new AppError('Failed to retrieve updated conversation', 500);
+    }
+
+    const unreadCount = populatedConversation.unreadCount.get(currentAdminId) || 0;
+    return {
+      id: String(populatedConversation._id),
+      type: populatedConversation.type,
+      participants: populatedConversation.participants.map((p: any) => ({
+        id: String(p._id),
+        username: p.username,
+        avatar: p.avatar,
+        isOnline: p.isOnline,
+        lastSeen: p.lastSeen,
+      })),
+      groupName: populatedConversation.groupName,
+      groupAdmin: populatedConversation.groupAdmin ? {
+        id: String((populatedConversation.groupAdmin as any)._id),
+        username: (populatedConversation.groupAdmin as any).username,
+        avatar: (populatedConversation.groupAdmin as any).avatar,
+      } : undefined,
+      lastMessage: populatedConversation.lastMessage,
+      lastMessageAt: populatedConversation.lastMessageAt,
+      unreadCount,
+      createdAt: populatedConversation.createdAt,
+      updatedAt: populatedConversation.updatedAt,
+    };
   }
 }

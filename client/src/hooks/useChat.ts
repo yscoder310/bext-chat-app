@@ -9,6 +9,7 @@ import {
   removeConversation,
   clearTypingUsers,
   markMessagesAsRead,
+  updateConversation,
 } from '../store/slices/chatSlice';
 import { conversationApi } from '../api/conversations';
 import { messageApi } from '../api/messages';
@@ -182,6 +183,50 @@ export const useChat = () => {
   // Get typing users for active conversation
   const activeTypingUsers = activeConversationId ? typingUsers[activeConversationId] || [] : [];
 
+  // Update group name
+  const updateGroupNameMutation = useMutation({
+    mutationFn: ({ conversationId, groupName }: { conversationId: string; groupName: string }) =>
+      conversationApi.updateGroupName(conversationId, groupName),
+    onSuccess: (data) => {
+      dispatch(updateConversation(data));
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      notifications.show({
+        title: 'Success',
+        message: 'Group name updated successfully',
+        color: 'green',
+      });
+    },
+    onError: () => {
+      notifications.show({
+        title: 'Error',
+        message: 'Failed to update group name',
+        color: 'red',
+      });
+    },
+  });
+
+  // Promote to admin
+  const promoteToAdminMutation = useMutation({
+    mutationFn: ({ conversationId, newAdminId }: { conversationId: string; newAdminId: string }) =>
+      conversationApi.promoteToAdmin(conversationId, newAdminId),
+    onSuccess: (data) => {
+      dispatch(updateConversation(data));
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      notifications.show({
+        title: 'Success',
+        message: 'Admin role transferred successfully',
+        color: 'green',
+      });
+    },
+    onError: () => {
+      notifications.show({
+        title: 'Error',
+        message: 'Failed to promote to admin',
+        color: 'red',
+      });
+    },
+  });
+
   return {
     conversations,
     activeConversation,
@@ -193,6 +238,8 @@ export const useChat = () => {
     createOneToOne: createOneToOneMutation.mutate,
     createGroup: createGroupMutation.mutate,
     deleteConversation: deleteConversationMutation.mutate,
+    updateGroupName: updateGroupNameMutation.mutate,
+    promoteToAdmin: promoteToAdminMutation.mutate,
     refetchConversations: conversationsQuery.refetch,
     refetchMessages: messagesQuery.refetch,
   };
