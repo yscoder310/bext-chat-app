@@ -10,8 +10,6 @@ import {
   Badge,
   ActionIcon,
   Loader,
-  Modal,
-  Button,
 } from '@mantine/core';
 import { IconSearch, IconPlus } from '@tabler/icons-react';
 import { format, isToday, isYesterday, differenceInMinutes, differenceInDays } from 'date-fns';
@@ -221,7 +219,11 @@ export const ConversationList = () => {
         </ScrollArea>
       </Stack>
 
-      <UserListModal opened={opened} onClose={close} />
+      <UserListModal 
+        opened={opened} 
+        onClose={close}
+        existingConversations={conversations}
+      />
     </>
   );
 };
