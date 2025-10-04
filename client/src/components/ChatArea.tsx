@@ -89,6 +89,37 @@ export const ChatArea = () => {
   const { sendMessage: socketSendMessage, startTyping, stopTyping } = useSocket();
   const { user } = useAppSelector((state) => state.auth);
 
+  // Check if current user is an admin of the group
+  const isCurrentUserAdmin = () => {
+    if (!activeConversation || activeConversation.type !== 'group' || !user?.id) {
+      return false;
+    }
+    
+    console.log('🔍 Checking admin status:', {
+      userId: user.id,
+      groupAdmin: activeConversation.groupAdmin,
+      groupAdmins: activeConversation.groupAdmins,
+      conversationType: activeConversation.type
+    });
+    
+    // Check in groupAdmins array (new way)
+    if (activeConversation.groupAdmins && Array.isArray(activeConversation.groupAdmins) && activeConversation.groupAdmins.length > 0) {
+      const isInAdmins = activeConversation.groupAdmins.some((admin: any) => {
+        if (typeof admin === 'string') {
+          return admin === user.id;
+        }
+        return admin?.id === user.id;
+      });
+      console.log('✅ isInAdmins (groupAdmins array):', isInAdmins);
+      return isInAdmins;
+    }
+    
+    // Fallback to single groupAdmin (old way, for backward compatibility)
+    const isSingleAdmin = activeConversation.groupAdmin?.id === user.id;
+    console.log('✅ isSingleAdmin (groupAdmin):', isSingleAdmin);
+    return isSingleAdmin;
+  };
+
   const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
     if (messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior, block: 'end' });
@@ -403,9 +434,8 @@ export const ChatArea = () => {
         radius={0}
         style={{
           borderBottom: '1px solid #dee2e6',
-          backgroundColor: 'white',
+          backgroundColor: '#ffffff',
           flexShrink: 0,
-          background: 'linear-gradient(to bottom, #ffffff 0%, #f8f9fa 100%)',
         }}
       >
         <Group justify="space-between">
@@ -495,7 +525,7 @@ export const ChatArea = () => {
                     <Text fw={600} size="lg">
                       {getConversationDisplayName()}
                     </Text>
-                    {activeConversation.type === 'group' && user?.id === activeConversation.groupAdmin?.id && (
+                    {activeConversation.type === 'group' && isCurrentUserAdmin() && (
                       <Tooltip label="Edit group name">
                         <ActionIcon 
                           variant="subtle" 
@@ -570,7 +600,11 @@ export const ChatArea = () => {
         style={{ 
           flex: 1, 
           minHeight: 0,
-          background: 'linear-gradient(to bottom, #f8f9fa 0%, #e9ecef 100%)',
+          backgroundImage: `
+            linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%),
+            repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(255,255,255,.03) 10px, rgba(255,255,255,.03) 20px)
+          `,
+          backgroundBlendMode: 'overlay',
         }} 
         p="md"
         styles={{

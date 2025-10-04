@@ -23,6 +23,12 @@ const conversationSchema = new Schema<IConversationDocument>(
       trim: true,
       maxlength: [100, 'Group name cannot exceed 100 characters'],
     },
+    groupAdmins: [
+      {
+        type: String,
+        ref: 'User',
+      },
+    ],
     groupAdmin: {
       type: String,
       ref: 'User',

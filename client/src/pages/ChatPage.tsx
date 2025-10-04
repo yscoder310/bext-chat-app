@@ -28,11 +28,21 @@ export const ChatPage = () => {
         collapsed: { mobile: !opened },
       }}
       padding={0}
+      styles={{
+        main: {
+          backgroundColor: '#f1f3f5',
+        },
+      }}
     >
       <AppShell.Header>
         <Group h="100%" px="md" justify="space-between">
           <Group>
-            <Burger opened={opened} onClick={toggle} hiddenFrom="sm" size="sm" />
+            <Burger 
+              opened={opened} 
+              onClick={toggle} 
+              hiddenFrom="sm" 
+              size="sm"
+            />
             <Title order={3}>Chat App</Title>
           </Group>
           
@@ -40,7 +50,13 @@ export const ChatPage = () => {
             <ChatRequestButton />
             <Menu shadow="md" width={200}>
               <Menu.Target>
-                <Avatar src={user?.avatar} alt={user?.username} style={{ cursor: 'pointer' }} />
+                <Avatar 
+                  src={user?.avatar} 
+                  alt={user?.username} 
+                  style={{ 
+                    cursor: 'pointer',
+                  }}
+                />
               </Menu.Target>
 
               <Menu.Dropdown>
@@ -62,7 +78,14 @@ export const ChatPage = () => {
         </Group>
       </AppShell.Header>
 
-      <AppShell.Navbar p="md">
+      <AppShell.Navbar 
+        p="md"
+        style={{
+          backgroundColor: '#ffffff',
+          borderRight: '1px solid #e9ecef',
+          boxShadow: '2px 0 8px rgba(0, 0, 0, 0.04)',
+        }}
+      >
         <ConversationList />
       </AppShell.Navbar>
 

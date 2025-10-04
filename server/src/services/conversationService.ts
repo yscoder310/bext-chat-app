@@ -84,14 +84,16 @@ export class ConversationService {
     const conversation = await Conversation.create({
       type: 'group',
       groupName,
-      groupAdmin: adminId,
+      groupAdmin: adminId, // Keep for backward compatibility
+      groupAdmins: [adminId],
       participants,
     });
 
     // Populate and format the response
     const populatedConversation = await Conversation.findById(conversation._id)
       .populate('participants', 'username avatar isOnline lastSeen')
-      .populate('groupAdmin', 'username avatar');
+      .populate('groupAdmin', 'username avatar')
+      .populate('groupAdmins', 'username avatar');
 
     if (!populatedConversation) {
       throw new AppError('Failed to create group conversation', 500);
@@ -115,6 +117,11 @@ export class ConversationService {
         username: (populatedConversation.groupAdmin as any).username,
         avatar: (populatedConversation.groupAdmin as any).avatar,
       } : undefined,
+      groupAdmins: populatedConversation.groupAdmins?.map((admin: any) => ({
+        id: String(admin._id),
+        username: admin.username,
+        avatar: admin.avatar,
+      })) || [],
       lastMessage: populatedConversation.lastMessage,
       lastMessageAt: populatedConversation.lastMessageAt,
       unreadCount,
@@ -130,6 +137,7 @@ export class ConversationService {
       .sort({ lastMessageAt: -1 })
       .populate('participants', 'username avatar isOnline lastSeen')
       .populate('groupAdmin', 'username avatar')
+      .populate('groupAdmins', 'username avatar')
       .populate({
         path: 'lastMessage',
         select: 'content senderId createdAt messageType',
@@ -142,6 +150,12 @@ export class ConversationService {
     // Format conversations with unread count
     const formattedConversations = conversations.map((conv) => {
       const unreadCount = conv.unreadCount.get(userId) || 0;
+      
+      // Migrate old groups: if groupAdmins is empty but groupAdmin exists, initialize groupAdmins
+      let groupAdmins = conv.groupAdmins || [];
+      if (conv.type === 'group' && conv.groupAdmin && groupAdmins.length === 0) {
+        groupAdmins = [conv.groupAdmin];
+      }
       
       return {
         id: String(conv._id),
@@ -159,6 +173,11 @@ export class ConversationService {
           username: (conv.groupAdmin as any).username,
           avatar: (conv.groupAdmin as any).avatar,
         } : undefined,
+        groupAdmins: groupAdmins.map((admin: any) => ({
+          id: String(admin._id || admin),
+          username: admin.username,
+          avatar: admin.avatar,
+        })),
         lastMessage: conv.lastMessage,
         lastMessageAt: conv.lastMessageAt,
         unreadCount,
@@ -173,7 +192,8 @@ export class ConversationService {
   static async getConversationById(conversationId: string, userId: string) {
     const conversation = await Conversation.findById(conversationId)
       .populate('participants', 'username avatar isOnline lastSeen')
-      .populate('groupAdmin', 'username avatar');
+      .populate('groupAdmin', 'username avatar')
+      .populate('groupAdmins', 'username avatar');
 
     if (!conversation) {
       throw new AppError('Conversation not found', 404);
@@ -288,8 +308,12 @@ export class ConversationService {
       throw new AppError('Only group conversations can have their name updated', 400);
     }
 
-    if (String(conversation.groupAdmin) !== adminId) {
-      throw new AppError('Only group admin can update the group name', 403);
+    // Check if current user is an admin
+    const isAdmin = conversation.groupAdmins?.includes(adminId) || 
+                    String(conversation.groupAdmin) === adminId;
+    
+    if (!isAdmin) {
+      throw new AppError('Only admins can update the group name', 403);
     }
 
     conversation.groupName = newGroupName;
@@ -298,7 +322,8 @@ export class ConversationService {
     // Return formatted conversation
     const populatedConversation = await Conversation.findById(conversationId)
       .populate('participants', 'username avatar isOnline lastSeen')
-      .populate('groupAdmin', 'username avatar');
+      .populate('groupAdmin', 'username avatar')
+      .populate('groupAdmins', 'username avatar');
 
     if (!populatedConversation) {
       throw new AppError('Failed to retrieve updated conversation', 500);
@@ -321,6 +346,11 @@ export class ConversationService {
         username: (populatedConversation.groupAdmin as any).username,
         avatar: (populatedConversation.groupAdmin as any).avatar,
       } : undefined,
+      groupAdmins: populatedConversation.groupAdmins?.map((admin: any) => ({
+        id: String(admin._id),
+        username: admin.username,
+        avatar: admin.avatar,
+      })) || [],
       lastMessage: populatedConversation.lastMessage,
       lastMessageAt: populatedConversation.lastMessageAt,
       unreadCount,
@@ -344,21 +374,36 @@ export class ConversationService {
       throw new AppError('Only group conversations have admins', 400);
     }
 
-    if (String(conversation.groupAdmin) !== currentAdminId) {
-      throw new AppError('Only current admin can promote others', 403);
+    // Check if current user is an admin
+    const isAdmin = conversation.groupAdmins?.includes(currentAdminId) || 
+                    String(conversation.groupAdmin) === currentAdminId;
+    
+    if (!isAdmin) {
+      throw new AppError('Only admins can promote others', 403);
     }
 
     if (!conversation.participants.includes(newAdminId)) {
       throw new AppError('New admin must be a participant of the group', 400);
     }
 
-    conversation.groupAdmin = newAdminId;
+    // Check if user is already an admin
+    if (conversation.groupAdmins?.includes(newAdminId)) {
+      throw new AppError('User is already an admin', 400);
+    }
+
+    // Add to groupAdmins array
+    if (!conversation.groupAdmins) {
+      conversation.groupAdmins = [];
+    }
+    conversation.groupAdmins.push(newAdminId);
+    
     await conversation.save();
 
     // Return formatted conversation
     const populatedConversation = await Conversation.findById(conversationId)
       .populate('participants', 'username avatar isOnline lastSeen')
-      .populate('groupAdmin', 'username avatar');
+      .populate('groupAdmin', 'username avatar')
+      .populate('groupAdmins', 'username avatar');
 
     if (!populatedConversation) {
       throw new AppError('Failed to retrieve updated conversation', 500);
@@ -381,6 +426,11 @@ export class ConversationService {
         username: (populatedConversation.groupAdmin as any).username,
         avatar: (populatedConversation.groupAdmin as any).avatar,
       } : undefined,
+      groupAdmins: populatedConversation.groupAdmins?.map((admin: any) => ({
+        id: String(admin._id),
+        username: admin.username,
+        avatar: admin.avatar,
+      })) || [],
       lastMessage: populatedConversation.lastMessage,
       lastMessageAt: populatedConversation.lastMessageAt,
       unreadCount,

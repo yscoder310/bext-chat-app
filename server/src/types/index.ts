@@ -30,7 +30,8 @@ export interface IConversation {
   type: 'one-to-one' | 'group';
   participants: string[];
   groupName?: string;
-  groupAdmin?: string;
+  groupAdmins?: string[];
+  groupAdmin?: string; // Keep for backward compatibility
   lastMessage?: string;
   lastMessageAt?: Date;
   unreadCount: Map<string, number>;

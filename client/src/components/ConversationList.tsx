@@ -147,10 +147,28 @@ export const ConversationList = () => {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             style={{ flex: 1 }}
+            styles={{
+              input: {
+                backgroundColor: '#f8f9fa',
+                border: '1px solid #e9ecef',
+                '&:focus': {
+                  backgroundColor: 'white',
+                  borderColor: '#228be6',
+                },
+              }
+            }}
+            radius="md"
           />
           <Menu shadow="md" width={200}>
             <Menu.Target>
-              <ActionIcon variant="filled" size="lg">
+              <ActionIcon 
+                variant="gradient" 
+                size="lg"
+                gradient={{ from: '#228be6', to: '#1c7ed6', deg: 135 }}
+                style={{
+                  boxShadow: '0 2px 8px rgba(34, 139, 230, 0.3)',
+                }}
+              >
                 <IconPlus size={18} />
               </ActionIcon>
             </Menu.Target>
@@ -167,7 +185,14 @@ export const ConversationList = () => {
         </Group>
 
         {pendingRequests.length > 0 && (
-          <Badge color="blue" variant="filled">
+          <Badge 
+            color="blue" 
+            variant="light"
+            size="lg"
+            style={{
+              padding: '8px 12px',
+            }}
+          >
             {pendingRequests.length} pending request{pendingRequests.length !== 1 ? 's' : ''}
           </Badge>
         )}
@@ -179,26 +204,49 @@ export const ConversationList = () => {
                 key={conv.id}
                 onClick={() => selectConversation(conv.id)}
                 style={{
-                  padding: '10px',
-                  borderRadius: '8px',
+                  padding: '12px',
+                  borderRadius: '10px',
                   backgroundColor:
-                    activeConversation?.id === conv.id ? '#f0f0f0' : 'transparent',
+                    activeConversation?.id === conv.id 
+                      ? '#e7f5ff' 
+                      : 'transparent',
+                  transition: 'all 0.2s ease',
+                }}
+                onMouseEnter={(e) => {
+                  if (activeConversation?.id !== conv.id) {
+                    e.currentTarget.style.backgroundColor = '#f8f9fa';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (activeConversation?.id !== conv.id) {
+                    e.currentTarget.style.backgroundColor = 'transparent';
+                  }
                 }}
               >
                 <Group>
                   <div style={{ position: 'relative' }}>
-                    <Avatar size={40}>{getConversationName(conv)?.[0] || '?'}</Avatar>
+                    <Avatar 
+                      size={46}
+                      color="blue"
+                      variant="light"
+                      style={{
+                        border: '2px solid #e9ecef',
+                      }}
+                    >
+                      {getConversationName(conv)?.[0] || '?'}
+                    </Avatar>
                     {conv.type === 'one-to-one' && (
                       <div
                         style={{
                           position: 'absolute',
                           bottom: 0,
                           right: 0,
-                          width: 10,
-                          height: 10,
+                          width: 12,
+                          height: 12,
                           borderRadius: '50%',
                           backgroundColor: getOtherUserOnlineStatus(conv) ? '#40c057' : '#868e96',
                           border: '2px solid white',
+                          boxShadow: '0 0 0 1px rgba(0,0,0,0.1)',
                         }}
                       />
                     )}
