@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, lazy, Suspense } from 'react';
 import { AppShell, Burger, Group, Title, Avatar, Menu, useMantineColorScheme, useMantineTheme } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import { LogOut, Settings, User } from 'lucide-react';
@@ -7,9 +7,11 @@ import { useSocket } from '../hooks/useSocket';
 import { ConversationList } from '../components/ConversationList';
 import { ChatArea } from '../components/ChatArea';
 import { ChatRequestButton } from '../components/ChatRequestButton';
-import { UserProfileModal } from '../components/UserProfileModal';
-import { UserSettingsModal } from '../components/UserSettingsModal';
 import { getAvatarColor } from '../utils/avatarColor';
+
+// Lazy load modals - they're not needed immediately
+const UserProfileModal = lazy(() => import('../components/UserProfileModal').then(module => ({ default: module.UserProfileModal })));
+const UserSettingsModal = lazy(() => import('../components/UserSettingsModal').then(module => ({ default: module.UserSettingsModal })));
 
 export const ChatPage = () => {
   const theme = useMantineTheme();
@@ -114,8 +116,10 @@ export const ChatPage = () => {
         <ChatArea />
       </AppShell.Main>
 
-      <UserProfileModal opened={profileOpened} onClose={closeProfile} />
-      <UserSettingsModal opened={settingsOpened} onClose={closeSettings} />
+      <Suspense fallback={null}>
+        {profileOpened && <UserProfileModal opened={profileOpened} onClose={closeProfile} />}
+        {settingsOpened && <UserSettingsModal opened={settingsOpened} onClose={closeSettings} />}
+      </Suspense>
     </AppShell>
   );
 };
