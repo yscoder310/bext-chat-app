@@ -15,7 +15,6 @@ const conversationSchema = new Schema<IConversationDocument>(
       {
         type: String,
         ref: 'User',
-        required: true,
       },
     ],
     groupName: {
@@ -85,10 +84,15 @@ conversationSchema.index({ lastMessageAt: -1 });
 // Ensure group conversations have a group name
 conversationSchema.pre('save', function (next) {
   if (this.type === 'group' && !this.groupName) {
-    next(new Error('Group conversations must have a group name'));
-  } else {
-    next();
+    return next(new Error('Group conversations must have a group name'));
   }
+  
+  // Ensure participants array is not empty
+  if (!this.participants || this.participants.length === 0) {
+    return next(new Error('Conversation must have at least one participant'));
+  }
+  
+  next();
 });
 
 export default mongoose.model<IConversationDocument>('Conversation', conversationSchema);

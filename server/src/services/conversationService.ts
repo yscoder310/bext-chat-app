@@ -170,6 +170,8 @@ export class ConversationService {
   }
 
   static async getUserConversations(userId: string) {
+    console.log(`📋 Getting conversations for user: ${userId}`);
+    
     const conversations = await Conversation.find({
       participants: userId,
     })
@@ -185,6 +187,11 @@ export class ConversationService {
           select: 'username',
         },
       });
+
+    console.log(`📋 Found ${conversations.length} conversations for user ${userId}`);
+    conversations.forEach(conv => {
+      console.log(`  - ${conv.type === 'group' ? conv.groupName : 'DM'} (${conv._id}) - ${conv.participants.length} participants`);
+    });
 
     // Format conversations with unread count
     const formattedConversations = conversations.map((conv) => {
@@ -343,19 +350,20 @@ export class ConversationService {
   }
 
   static async leaveGroup(conversationId: string, userId: string) {
-    const conversation = await Conversation.findById(conversationId)
+    // First, get conversation with populated participants for system message
+    const conversationWithUsers = await Conversation.findById(conversationId)
       .populate('participants', 'username');
 
-    if (!conversation) {
+    if (!conversationWithUsers) {
       throw new AppError('Conversation not found', 404);
     }
 
-    if (conversation.type !== 'group') {
+    if (conversationWithUsers.type !== 'group') {
       throw new AppError('Only group conversations can be left', 400);
     }
 
-    // Check if user is a member (participants are populated as objects)
-    const isMember = (conversation.participants as any[]).some((p: any) => 
+    // Check if user is a member
+    const isMember = (conversationWithUsers.participants as any[]).some((p: any) => 
       (p._id || p).toString() === userId
     );
 
@@ -363,21 +371,36 @@ export class ConversationService {
       throw new AppError('You are not a member of this group', 400);
     }
 
-    const leavingMember = (conversation.participants as any[]).find((p: any) => 
+    // Get username for system message
+    const leavingMember = (conversationWithUsers.participants as any[]).find((p: any) => 
       (p._id || p).toString() === userId
     );
 
-    conversation.participants = conversation.participants.filter(
-      (p) => p !== userId && (p as any)._id?.toString() !== userId
+    // Use findByIdAndUpdate with $pull to properly remove user from arrays
+    // This is atomic and avoids the validation issue with populated documents
+    const updatedConversation = await Conversation.findByIdAndUpdate(
+      conversationId,
+      {
+        $pull: {
+          participants: userId,
+          groupAdmins: userId,
+        },
+        $unset: {
+          [`unreadCount.${userId}`]: 1
+        },
+        $set: {
+          lastMessageAt: new Date()
+        }
+      },
+      { new: true }
     );
-    conversation.unreadCount.delete(userId);
-    
-    // Remove from admins if they are an admin
-    if (conversation.groupAdmins) {
-      conversation.groupAdmins = conversation.groupAdmins.filter(adminId => adminId !== userId);
+
+    if (!updatedConversation) {
+      throw new AppError('Failed to update conversation', 500);
     }
-    
-    await conversation.save();
+
+    console.log(`✅ User ${userId} removed from conversation ${conversationId}`);
+    console.log(`✅ Remaining participants: ${updatedConversation.participants.length}`);
 
     // Create system message
     await this.createSystemMessage(
