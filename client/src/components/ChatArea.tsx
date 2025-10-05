@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, lazy, Suspense } from 'react';
 import {
   Stack,
   Group,
@@ -48,11 +48,13 @@ import { useChat } from '../hooks/useChat';
 import { getAvatarColor } from '../utils/avatarColor';
 import { getSetting } from './UserSettingsModal';
 import { useDisclosure } from '@mantine/hooks';
-import { InviteMembersModal } from './InviteMembersModal';
 import { useSocket } from '../hooks/useSocket';
 import { useAppSelector } from '../store/hooks';
-import { GroupMembersModal } from './GroupMembersModal';
-import { EditGroupDetailsModal } from './EditGroupDetailsModal';
+
+// Lazy load heavy modals for better performance
+const InviteMembersModal = lazy(() => import('./InviteMembersModal').then(module => ({ default: module.InviteMembersModal })));
+const GroupMembersModal = lazy(() => import('./GroupMembersModal').then(module => ({ default: module.GroupMembersModal })));
+const EditGroupDetailsModal = lazy(() => import('./EditGroupDetailsModal').then(module => ({ default: module.EditGroupDetailsModal })));
 
 const EmptyState = () => {
   const theme = useMantineTheme();
@@ -454,8 +456,8 @@ export const ChatArea = () => {
         backgroundColor: isDark ? theme.colors.dark[7] : theme.colors.gray[0] 
       }}>
         <Stack align="center" gap="md">
-          <Loader size="lg" color="blue" />
-          <Text size="sm" c="dimmed">Loading messages...</Text>
+          <Loader size="lg" type="dots" color="blue" />
+          <Text size="sm" c="dimmed" fw={500}>Loading messages...</Text>
         </Stack>
       </Center>
     );
@@ -1053,25 +1055,29 @@ export const ChatArea = () => {
 
       {/* Group Members Modal */}
       {activeConversation.type === 'group' && (
-        <>
-          <GroupMembersModal
-            opened={membersModalOpened}
-            onClose={closeMembersModal}
-            conversation={activeConversation}
-            currentUserId={user?.id}
-            onPromoteToAdmin={(newAdminId) => {
-              if (activeConversation.id) {
-                promoteToAdmin({ conversationId: activeConversation.id, newAdminId });
-              }
-            }}
-          />
+        <Suspense fallback={null}>
+          {membersModalOpened && (
+            <GroupMembersModal
+              opened={membersModalOpened}
+              onClose={closeMembersModal}
+              conversation={activeConversation}
+              currentUserId={user?.id}
+              onPromoteToAdmin={(newAdminId) => {
+                if (activeConversation.id) {
+                  promoteToAdmin({ conversationId: activeConversation.id, newAdminId });
+                }
+              }}
+            />
+          )}
 
-          <EditGroupDetailsModal
-            opened={editDetailsOpened}
-            onClose={closeEditDetails}
-            conversation={activeConversation}
-          />
-        </>
+          {editDetailsOpened && (
+            <EditGroupDetailsModal
+              opened={editDetailsOpened}
+              onClose={closeEditDetails}
+              conversation={activeConversation}
+            />
+          )}
+        </Suspense>
       )}
 
       {/* Leave Group Confirmation Modal */}
@@ -1110,11 +1116,15 @@ export const ChatArea = () => {
         </Stack>
       </Modal>
 
-      <InviteMembersModal
-        opened={inviteMembersOpened}
-        onClose={closeInviteMembers}
-        conversation={activeConversation}
-      />
+      <Suspense fallback={null}>
+        {inviteMembersOpened && (
+          <InviteMembersModal
+            opened={inviteMembersOpened}
+            onClose={closeInviteMembers}
+            conversation={activeConversation}
+          />
+        )}
+      </Suspense>
     </Stack>
   );
 };

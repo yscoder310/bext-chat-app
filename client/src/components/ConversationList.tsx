@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, lazy, Suspense } from 'react';
 import {
   Stack,
   TextInput,
@@ -20,13 +20,15 @@ import { useChat } from '../hooks/useChat';
 import { useChatRequests } from '../hooks/useChatRequests';
 import { useDisclosure } from '@mantine/hooks';
 import { useQuery } from '@tanstack/react-query';
-import { UserListModal } from './UserListModal';
-import { CreateGroupModal } from './CreateGroupModal';
-import { InvitationNotification } from './InvitationNotification';
-import { PublicGroupsDiscovery } from './PublicGroupsDiscovery';
 import { useAppSelector } from '../store/hooks';
 import { conversationApi } from '../api/conversations';
 import { getAvatarColor } from '../utils/avatarColor';
+
+// Lazy load modals for better performance
+const UserListModal = lazy(() => import('./UserListModal').then(module => ({ default: module.UserListModal })));
+const CreateGroupModal = lazy(() => import('./CreateGroupModal').then(module => ({ default: module.CreateGroupModal })));
+const InvitationNotification = lazy(() => import('./InvitationNotification').then(module => ({ default: module.InvitationNotification })));
+const PublicGroupsDiscovery = lazy(() => import('./PublicGroupsDiscovery').then(module => ({ default: module.PublicGroupsDiscovery })));
 
 export const ConversationList = () => {
   const theme = useMantineTheme();
@@ -151,8 +153,11 @@ export const ConversationList = () => {
 
   if (isLoadingConversations) {
     return (
-      <Stack align="center" justify="center" h="100%">
-        <Loader />
+      <Stack align="center" justify="center" h="100%" gap="md">
+        <Loader size="lg" type="dots" color="blue" />
+        <Text size="sm" c="dimmed" fw={500}>
+          Loading conversations...
+        </Text>
       </Stack>
     );
   }
@@ -350,29 +355,39 @@ export const ConversationList = () => {
         </ScrollArea>
       </Stack>
 
-      <UserListModal 
-        opened={userListOpened} 
-        onClose={closeUserList}
-        existingConversations={conversations}
-      />
+      <Suspense fallback={null}>
+        {userListOpened && (
+          <UserListModal 
+            opened={userListOpened} 
+            onClose={closeUserList}
+            existingConversations={conversations}
+          />
+        )}
 
-      <CreateGroupModal
-        opened={groupModalOpened}
-        onClose={closeGroupModal}
-        onCreateGroup={(groupData) => {
-          createGroup(groupData);
-        }}
-      />
+        {groupModalOpened && (
+          <CreateGroupModal
+            opened={groupModalOpened}
+            onClose={closeGroupModal}
+            onCreateGroup={(groupData) => {
+              createGroup(groupData);
+            }}
+          />
+        )}
 
-      <InvitationNotification
-        opened={invitationsOpened}
-        onClose={closeInvitations}
-      />
+        {invitationsOpened && (
+          <InvitationNotification
+            opened={invitationsOpened}
+            onClose={closeInvitations}
+          />
+        )}
 
-      <PublicGroupsDiscovery
-        opened={publicGroupsOpened}
-        onClose={closePublicGroups}
-      />
+        {publicGroupsOpened && (
+          <PublicGroupsDiscovery
+            opened={publicGroupsOpened}
+            onClose={closePublicGroups}
+          />
+        )}
+      </Suspense>
     </>
   );
 };
