@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import { logError, logWarn } from '../config/logger';
 
 export class AppError extends Error {
   statusCode: number;
@@ -15,12 +16,27 @@ export class AppError extends Error {
 
 export const errorHandler = (
   err: any,
-  _req: Request,
+  req: Request,
   res: Response,
   _next: NextFunction
 ): void => {
   err.statusCode = err.statusCode || 500;
   err.message = err.message || 'Internal Server Error';
+
+  // Log the error with context
+  const errorContext = {
+    path: req.path,
+    method: req.method,
+    statusCode: err.statusCode,
+    userId: (req as any).user?.id || 'anonymous',
+    ip: req.ip,
+  };
+
+  if (err.statusCode >= 500) {
+    logError('Server error', err, errorContext);
+  } else if (err.statusCode >= 400) {
+    logWarn('Client error', errorContext);
+  }
 
   // Development error response
   if (process.env.NODE_ENV === 'development') {
@@ -40,7 +56,7 @@ export const errorHandler = (
       error: err.message,
     });
   } else {
-    console.error('ERROR 💥:', err);
+    logError('Unexpected error', err, errorContext);
     res.status(500).json({
       success: false,
       error: 'Something went wrong',

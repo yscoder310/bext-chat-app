@@ -4,24 +4,84 @@ import jwt from 'jsonwebtoken';
 import { MessageService } from '../services/messageService';
 import { AuthService } from '../services/authService';
 import { JWTPayload } from '../types';
+import {
+  logSocketConnection,
+  logSocketDisconnection,
+  logSocketEvent,
+  logSocketError,
+} from './logger';
 
 interface AuthenticatedSocket extends Socket {
   user?: JWTPayload;
 }
 
-interface OnlineUsers {
-  [userId: string]: string; // userId -> socketId
-}
+// Track online users: userId -> socketId
+const onlineUsers: Record<string, string> = {};
 
-interface TypingTracker {
-  [conversationId: string]: {
-    [userId: string]: NodeJS.Timeout;
-  };
-}
+// Track typing timeouts: conversationId -> userId -> timeout
+const typingTimeouts: Record<string, Record<string, NodeJS.Timeout>> = {};
 
-const onlineUsers: OnlineUsers = {};
-const typingTimeouts: TypingTracker = {};
 let socketInstance: Server | null = null;
+
+/**
+ * Authenticate socket connection using JWT token
+ */
+const authenticateSocket = (socket: AuthenticatedSocket, next: (err?: Error) => void) => {
+  try {
+    const token = socket.handshake.auth.token;
+    if (!token) {
+      logSocketError('authentication', 'anonymous', new Error('Token required'));
+      return next(new Error('Authentication error: Token required'));
+    }
+
+    const secret = process.env.JWT_SECRET || 'your-secret-key';
+    const decoded = jwt.verify(token, secret) as JWTPayload;
+    socket.user = decoded;
+    next();
+  } catch (error) {
+    logSocketError('authentication', 'anonymous', error instanceof Error ? error : new Error('Invalid token'));
+    next(new Error('Authentication error: Invalid token'));
+  }
+};
+
+/**
+ * Emit event to all participants in a conversation
+ * Uses socket rooms for efficient broadcasting
+ */
+const emitToConversation = (
+  chatNamespace: any,
+  conversationId: string,
+  event: string,
+  data: any
+) => {
+  chatNamespace.to(`conversation:${conversationId}`).emit(event, data);
+};
+
+/**
+ * Emit event to a specific user by userId
+ */
+const emitToUser = (chatNamespace: any, userId: string, event: string, data: any) => {
+  chatNamespace.to(`user:${userId}`).emit(event, data);
+};
+
+/**
+ * Clear typing indicator for a user in a conversation
+ */
+const clearTyping = (
+  chatNamespace: any,
+  conversationId: string,
+  userId: string
+) => {
+  if (typingTimeouts[conversationId]?.[userId]) {
+    clearTimeout(typingTimeouts[conversationId][userId]);
+    delete typingTimeouts[conversationId][userId];
+  }
+
+  emitToConversation(chatNamespace, conversationId, 'user-stopped-typing', {
+    userId,
+    conversationId,
+  });
+};
 
 export const initializeSocket = (httpServer: HTTPServer) => {
   const io = new Server(httpServer, {
@@ -32,80 +92,47 @@ export const initializeSocket = (httpServer: HTTPServer) => {
     },
   });
 
-  // Socket.io authentication middleware
-  io.use((socket: AuthenticatedSocket, next) => {
-    try {
-      const token = socket.handshake.auth.token;
-
-      if (!token) {
-        return next(new Error('Authentication error: Token required'));
-      }
-
-      const secret = process.env.JWT_SECRET || 'your-secret-key';
-      const decoded = jwt.verify(token, secret) as JWTPayload;
-
-      socket.user = decoded;
-      next();
-    } catch (error) {
-      next(new Error('Authentication error: Invalid token'));
-    }
-  });
-
-  // Chat namespace
+  // Chat namespace with authentication
   const chatNamespace = io.of('/chat');
-
-  chatNamespace.use((socket: AuthenticatedSocket, next) => {
-    try {
-      const token = socket.handshake.auth.token;
-      const secret = process.env.JWT_SECRET || 'your-secret-key';
-      const decoded = jwt.verify(token, secret) as JWTPayload;
-      socket.user = decoded;
-      next();
-    } catch (error) {
-      next(new Error('Authentication error'));
-    }
-  });
+  chatNamespace.use(authenticateSocket);
 
   chatNamespace.on('connection', (socket: AuthenticatedSocket) => {
     if (!socket.user) return;
 
     const userId = socket.user.userId;
-    console.log(`✅ User connected: ${userId}, Socket ID: ${socket.id}`);
+    logSocketConnection(userId, socket.id);
 
-    // Store online user
+    // Track online status
     onlineUsers[userId] = socket.id;
-
-    // Update user online status in database
     AuthService.updateOnlineStatus(userId, true);
 
-    // Notify ALL users in the chat namespace that this user is online
-    chatNamespace.emit('user-online', { userId });
-    console.log(`📢 Broadcasting user-online event for user: ${userId}`);
-
-    // Join user's personal room
+    // Join user's personal room and broadcast online status
     socket.join(`user:${userId}`);
+    chatNamespace.emit('user-online', { userId });
 
-    // Join conversation rooms
+    /**
+     * Join a conversation room
+     */
     socket.on('join-conversation', (conversationId: string) => {
       socket.join(`conversation:${conversationId}`);
-      console.log(`User ${userId} joined conversation ${conversationId}`);
     });
 
-    // Leave conversation room
+    /**
+     * Leave a conversation room
+     */
     socket.on('leave-conversation', (conversationId: string) => {
       socket.leave(`conversation:${conversationId}`);
-      console.log(`User ${userId} left conversation ${conversationId}`);
     });
 
-    // Send message
+    /**
+     * Send a message
+     */
     socket.on('send-message', async (data: {
       conversationId: string;
       content: string;
       messageType?: 'text' | 'image' | 'file';
     }) => {
       try {
-        console.log(`User ${userId} sending message to conversation ${data.conversationId}`);
-        
         const message = await MessageService.sendMessage(
           data.conversationId,
           userId,
@@ -113,186 +140,97 @@ export const initializeSocket = (httpServer: HTTPServer) => {
           data.messageType || 'text'
         );
 
-        console.log('Message created:', message);
-
-        // Get conversation to find all participants
-        const conversation = await require('../models/Conversation').default.findById(data.conversationId);
+        // Emit to all participants in the conversation room
+        emitToConversation(chatNamespace, data.conversationId, 'new-message', message);
         
-        if (conversation) {
-          // Emit to all participants (both in room and not in room)
-          conversation.participants.forEach((participantId: any) => {
-            const participantIdStr = String(participantId);
-            const socketId = onlineUsers[participantIdStr];
-            if (socketId) {
-              chatNamespace.to(socketId).emit('new-message', message);
-            }
-          });
-          
-          // Also emit to conversation room (for users actively in the chat)
-          chatNamespace.to(`conversation:${data.conversationId}`).emit('new-message', message);
-        } else {
-          // Fallback to room-only if conversation not found
-          socket.emit('new-message', message);
-          chatNamespace.to(`conversation:${data.conversationId}`).emit('new-message', message);
-        }
-
         // Send acknowledgment to sender
         socket.emit('message-sent', { success: true, message });
         
-        console.log('Message emitted to all participants');
+        logSocketEvent('send-message', userId, { conversationId: data.conversationId, messageType: data.messageType });
       } catch (error: any) {
-        console.error('Error sending message:', error);
+        logSocketError('send-message', userId, error);
         socket.emit('message-error', { error: error.message });
       }
     });
 
-    // Typing indicator with automatic timeout
-    socket.on('typing-start', async (data: { conversationId: string }) => {
-      console.log(`⌨️ User ${userId} started typing in conversation ${data.conversationId}`);
-      
-      // Clear any existing timeout for this user in this conversation
-      if (typingTimeouts[data.conversationId]?.[userId]) {
-        clearTimeout(typingTimeouts[data.conversationId][userId]);
-      }
-      
-      // Get conversation to find all participants
-      const conversation = await require('../models/Conversation').default.findById(data.conversationId);
-      
-      if (conversation) {
-        // Emit to all participants
-        conversation.participants.forEach((participantId: any) => {
-          const participantIdStr = String(participantId);
-          if (participantIdStr !== userId) { // Don't send to self
-            const socketId = onlineUsers[participantIdStr];
-            if (socketId) {
-              chatNamespace.to(socketId).emit('user-typing', {
-                userId,
-                conversationId: data.conversationId,
-              });
-            }
-          }
-        });
-      }
-      
-      // Also broadcast to conversation room
+    /**
+     * User started typing
+     */
+    socket.on('typing-start', (data: { conversationId: string }) => {
+      // Clear any existing timeout
+      clearTyping(chatNamespace, data.conversationId, userId);
+
+      // Broadcast typing indicator
       socket.to(`conversation:${data.conversationId}`).emit('user-typing', {
         userId,
         conversationId: data.conversationId,
       });
-      
-      // Set automatic timeout to clear typing after 5 seconds (safety mechanism)
+
+      // Auto-clear after 5 seconds
       if (!typingTimeouts[data.conversationId]) {
         typingTimeouts[data.conversationId] = {};
       }
-      
-      typingTimeouts[data.conversationId][userId] = setTimeout(async () => {
-        console.log(`⏱️ Auto-clearing typing indicator for user ${userId} in conversation ${data.conversationId}`);
-        
-        // Get conversation again for auto-clear
-        const conv = await require('../models/Conversation').default.findById(data.conversationId);
-        if (conv) {
-          conv.participants.forEach((participantId: any) => {
-            const participantIdStr = String(participantId);
-            if (participantIdStr !== userId) {
-              const socketId = onlineUsers[participantIdStr];
-              if (socketId) {
-                chatNamespace.to(socketId).emit('user-stopped-typing', {
-                  userId,
-                  conversationId: data.conversationId,
-                });
-              }
-            }
-          });
-        }
-        
-        socket.to(`conversation:${data.conversationId}`).emit('user-stopped-typing', {
-          userId,
-          conversationId: data.conversationId,
-        });
-        delete typingTimeouts[data.conversationId][userId];
+
+      typingTimeouts[data.conversationId][userId] = setTimeout(() => {
+        clearTyping(chatNamespace, data.conversationId, userId);
       }, 5000);
     });
 
-    socket.on('typing-stop', async (data: { conversationId: string }) => {
-      console.log(`🛑 User ${userId} stopped typing in conversation ${data.conversationId}`);
-      
-      // Clear the timeout
-      if (typingTimeouts[data.conversationId]?.[userId]) {
-        clearTimeout(typingTimeouts[data.conversationId][userId]);
-        delete typingTimeouts[data.conversationId][userId];
-      }
-      
-      // Get conversation to find all participants
-      const conversation = await require('../models/Conversation').default.findById(data.conversationId);
-      
-      if (conversation) {
-        // Emit to all participants
-        conversation.participants.forEach((participantId: any) => {
-          const participantIdStr = String(participantId);
-          if (participantIdStr !== userId) {
-            const socketId = onlineUsers[participantIdStr];
-            if (socketId) {
-              chatNamespace.to(socketId).emit('user-stopped-typing', {
-                userId,
-                conversationId: data.conversationId,
-              });
-            }
-          }
-        });
-      }
-      
-      // Also broadcast to conversation room
-      socket.to(`conversation:${data.conversationId}`).emit('user-stopped-typing', {
-        userId,
-        conversationId: data.conversationId,
-      });
+    /**
+     * User stopped typing
+     */
+    socket.on('typing-stop', (data: { conversationId: string }) => {
+      clearTyping(chatNamespace, data.conversationId, userId);
     });
 
-    // Mark messages as read
+    /**
+     * Mark messages as read
+     */
     socket.on('mark-as-read', async (data: { conversationId: string }) => {
       try {
         await MessageService.markAsRead(data.conversationId, userId);
-
-        // Notify other participants
+        
         socket.to(`conversation:${data.conversationId}`).emit('messages-read', {
           conversationId: data.conversationId,
           userId,
         });
+        
+        logSocketEvent('mark-as-read', userId, { conversationId: data.conversationId });
       } catch (error: any) {
+        logSocketError('mark-as-read', userId, error);
         socket.emit('error', { error: error.message });
       }
     });
 
-    // Chat request events
+    /**
+     * Chat request events
+     */
     socket.on('chat-request-sent', (data: { receiverId: string; request: any }) => {
-      const receiverSocketId = onlineUsers[data.receiverId];
-      if (receiverSocketId) {
-        chatNamespace.to(receiverSocketId).emit('new-chat-request', data.request);
-      }
+      logSocketEvent('chat-request-sent', userId, { receiverId: data.receiverId });
+      emitToUser(chatNamespace, data.receiverId, 'new-chat-request', data.request);
     });
 
     socket.on('chat-request-accepted', (data: { senderId: string; conversation: any }) => {
-      const senderSocketId = onlineUsers[data.senderId];
-      if (senderSocketId) {
-        chatNamespace.to(senderSocketId).emit('chat-request-accepted', data.conversation);
-      }
+      logSocketEvent('chat-request-accepted', userId, { senderId: data.senderId });
+      emitToUser(chatNamespace, data.senderId, 'chat-request-accepted', data.conversation);
     });
 
     socket.on('chat-request-rejected', (data: { senderId: string }) => {
-      const senderSocketId = onlineUsers[data.senderId];
-      if (senderSocketId) {
-        chatNamespace.to(senderSocketId).emit('chat-request-rejected');
-      }
+      logSocketEvent('chat-request-rejected', userId, { senderId: data.senderId });
+      emitToUser(chatNamespace, data.senderId, 'chat-request-rejected', {});
     });
 
-    // Get online users
+    /**
+     * Get list of online users
+     */
     socket.on('get-online-users', () => {
-      const onlineUserIds = Object.keys(onlineUsers);
-      console.log(`📋 Sending online users list: ${onlineUserIds.length} users online`);
-      socket.emit('online-users', onlineUserIds);
+      logSocketEvent('get-online-users', userId, { count: Object.keys(onlineUsers).length });
+      socket.emit('online-users', Object.keys(onlineUsers));
     });
 
-    // NEW: Group invitation events
+    /**
+     * Group invitation events
+     */
     socket.on('invite-to-group', async (data: { conversationId: string; userIds: string[] }) => {
       try {
         const { ConversationService } = await import('../services/conversationService');
@@ -305,14 +243,13 @@ export const initializeSocket = (httpServer: HTTPServer) => {
         // Notify invited users
         invitations.forEach((invitation: any) => {
           const targetUserId = invitation.invitedUser._id.toString();
-          const targetSocketId = onlineUsers[targetUserId];
-          if (targetSocketId) {
-            chatNamespace.to(targetSocketId).emit('group-invitation', invitation);
-          }
+          emitToUser(chatNamespace, targetUserId, 'group-invitation', invitation);
         });
 
         socket.emit('invitations-sent', { count: invitations.length });
+        logSocketEvent('invite-to-group', userId, { conversationId: data.conversationId, count: invitations.length });
       } catch (error: any) {
+        logSocketError('invite-to-group', userId, error);
         socket.emit('error', { message: error.message });
       }
     });
@@ -322,83 +259,65 @@ export const initializeSocket = (httpServer: HTTPServer) => {
         const { ConversationService } = await import('../services/conversationService');
         const result = await ConversationService.acceptInvitation(data.invitationId, userId);
 
-        // Join socket room
-        socket.join(`conversation:${result.conversation.id}`);
-
-        // Notify user
-        socket.emit('invitation-accepted', result.conversation);
-
-        // Emit system message to all members (including the new member)
-        if (result.systemMessage) {
-          chatNamespace.to(`conversation:${result.conversation.id}`).emit('new-message', result.systemMessage);
-          console.log(`📨 Emitted system message for invitation acceptance to conversation: ${result.conversation.id}`);
-        }
-
-        // Notify existing members about new member
-        socket.to(`conversation:${result.conversation.id}`).emit('member-joined', {
-          conversationId: result.conversation.id,
-          member: result.conversation.participants.find((m: any) => m.id === userId),
+        // Notify the inviter
+        const inviterId = result.invitation.invitedBy._id.toString();
+        emitToUser(chatNamespace, inviterId, 'invitation-accepted', {
+          invitationId: data.invitationId,
+          acceptedBy: result.invitation.invitedUser,
+          conversation: result.conversation,
         });
+
+        // Notify all participants of the updated conversation
+        const participantIds = result.conversation.participants.map((p: any) => p._id.toString());
+        participantIds.forEach((participantId: string) => {
+          emitToUser(chatNamespace, participantId, 'conversation-updated', result.conversation);
+        });
+
+        socket.emit('invitation-accepted', result);
+        logSocketEvent('accept-invitation', userId, { invitationId: data.invitationId });
       } catch (error: any) {
+        logSocketError('accept-invitation', userId, error);
         socket.emit('error', { message: error.message });
       }
-    });
-
-    socket.on('decline-invitation', async (data: { invitationId: string }) => {
+    });    socket.on('decline-invitation', async (data: { invitationId: string }) => {
       try {
         const { ConversationService } = await import('../services/conversationService');
-        await ConversationService.declineInvitation(data.invitationId, userId);
+        const invitation = await ConversationService.declineInvitation(data.invitationId, userId);
+
+        // Notify the inviter
+        const inviterId = invitation.invitedBy._id.toString();
+        emitToUser(chatNamespace, inviterId, 'invitation-declined', {
+          invitationId: data.invitationId,
+          declinedBy: invitation.invitedUser,
+        });
+
         socket.emit('invitation-declined', { invitationId: data.invitationId });
+        logSocketEvent('decline-invitation', userId, { invitationId: data.invitationId });
       } catch (error: any) {
+        logSocketError('decline-invitation', userId, error);
         socket.emit('error', { message: error.message });
       }
     });
 
-    // Disconnect
-    socket.on('disconnect', async () => {
-      console.log(`❌ User disconnected: ${userId}`);
+    /**
+     * Handle disconnection
+     */
+    socket.on('disconnect', async (reason: string) => {
+      logSocketDisconnection(userId, socket.id, reason);
 
-      // Clear all typing timeouts for this user and notify all participants
-      const conversationIds = Object.keys(typingTimeouts);
-      for (const conversationId of conversationIds) {
+      // Clear all typing indicators for this user
+      Object.keys(typingTimeouts).forEach((conversationId) => {
         if (typingTimeouts[conversationId][userId]) {
-          clearTimeout(typingTimeouts[conversationId][userId]);
-          delete typingTimeouts[conversationId][userId];
-          
-          // Get conversation to notify all participants
-          const conversation = await require('../models/Conversation').default.findById(conversationId);
-          if (conversation) {
-            conversation.participants.forEach((participantId: any) => {
-              const participantIdStr = String(participantId);
-              if (participantIdStr !== userId) {
-                const socketId = onlineUsers[participantIdStr];
-                if (socketId) {
-                  chatNamespace.to(socketId).emit('user-stopped-typing', {
-                    userId,
-                    conversationId,
-                  });
-                }
-              }
-            });
-          }
-          
-          // Also emit to conversation room
-          chatNamespace.to(`conversation:${conversationId}`).emit('user-stopped-typing', {
-            userId,
-            conversationId,
-          });
+          clearTyping(chatNamespace, conversationId, userId);
         }
-      }
+      });
 
-      // Remove from online users
+      // Update online status
       delete onlineUsers[userId];
-
-      // Update user status in database
       await AuthService.updateOnlineStatus(userId, false);
-
-      // Notify ALL users in the chat namespace that this user is offline
+      
+      // Broadcast offline status
       chatNamespace.emit('user-offline', { userId });
-      console.log(`📢 Broadcasting user-offline event for user: ${userId}`);
     });
   });
 
