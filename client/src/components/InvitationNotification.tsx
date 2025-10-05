@@ -1,4 +1,4 @@
-import { Modal, Stack, Group, Avatar, Text, Button, Badge, ScrollArea } from '@mantine/core';
+import { Modal, Stack, Group, Avatar, Text, Button, Badge, ScrollArea, useMantineTheme, useMantineColorScheme } from '@mantine/core';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { conversationApi } from '../api/conversations';
 import { socketService } from '../lib/socket';
@@ -13,6 +13,9 @@ interface InvitationNotificationProps {
 }
 
 export const InvitationNotification = ({ opened, onClose }: InvitationNotificationProps) => {
+  const theme = useMantineTheme();
+  const { colorScheme } = useMantineColorScheme();
+  const isDark = colorScheme === 'dark';
   const queryClient = useQueryClient();
 
   const { data: invitations = [], isLoading } = useQuery({
@@ -81,8 +84,9 @@ export const InvitationNotification = ({ opened, onClose }: InvitationNotificati
                   key={invitation._id}
                   p="md"
                   style={{
-                    border: '1px solid #e0e0e0',
+                    border: `1px solid ${isDark ? theme.colors.dark[4] : theme.colors.gray[3]}`,
                     borderRadius: '8px',
+                    backgroundColor: isDark ? theme.colors.dark[6] : 'white',
                   }}
                   align="start"
                 >

@@ -1,4 +1,5 @@
-import { Modal, Stack, ScrollArea, Group, Avatar, Text, Badge, Box, Menu, ActionIcon, TextInput, Divider, Paper } from '@mantine/core';
+import { Modal, Stack, ScrollArea, Group, Avatar, Text, Badge, Box, Menu, ActionIcon, TextInput, Divider, Paper, useMantineColorScheme, useMantineTheme } from '@mantine/core';
+import { modals } from '@mantine/modals';
 import { MoreVertical, Crown, Search, UserMinus } from 'lucide-react';
 import { useState, useMemo } from 'react';
 import { Conversation } from '../types';
@@ -21,6 +22,10 @@ export const GroupMembersModal = ({
   onPromoteToAdmin,
   onRemoveMember 
 }: GroupMembersModalProps) => {
+  const theme = useMantineTheme();
+  const { colorScheme } = useMantineColorScheme();
+  const isDark = colorScheme === 'dark';
+  
   const [searchQuery, setSearchQuery] = useState('');
   
   console.log('📋 GroupMembersModal - conversation data:', {
@@ -33,6 +38,22 @@ export const GroupMembersModal = ({
   });
   
   if (conversation.type !== 'group') return null;
+
+  // Handle promote to admin with confirmation
+  const handlePromoteToAdmin = (member: any) => {
+    modals.openConfirmModal({
+      title: 'Promote to Admin',
+      children: (
+        <Text size="sm">
+          Are you sure you want to promote <strong>{member.username}</strong> to admin? 
+          They will have full control over the group including managing members and settings.
+        </Text>
+      ),
+      labels: { confirm: 'Promote to Admin', cancel: 'Cancel' },
+      confirmProps: { color: 'blue' },
+      onConfirm: () => onPromoteToAdmin?.(member.id),
+    });
+  };
 
   // Check if user is an admin (supports multiple admins)
   const isAdmin = (userId: string) => {
@@ -71,8 +92,7 @@ export const GroupMembersModal = ({
     
     const query = searchQuery.toLowerCase();
     return conversation.participants.filter((member) => 
-      member.username?.toLowerCase().includes(query) ||
-      member.email?.toLowerCase().includes(query)
+      member.username?.toLowerCase().includes(query)
     );
   }, [conversation.participants, searchQuery]);
 
@@ -100,7 +120,14 @@ export const GroupMembersModal = ({
     >
       <Stack gap="md">
         {/* Stats Section */}
-        <Paper p="sm" radius="md" style={{ backgroundColor: '#f8f9fa' }}>
+        <Paper 
+          p="sm" 
+          radius="md" 
+          style={{ 
+            backgroundColor: isDark ? theme.colors.dark[6] : theme.colors.gray[0],
+            border: `1px solid ${isDark ? theme.colors.dark[5] : theme.colors.gray[2]}`,
+          }}
+        >
           <Group justify="space-between">
             <Group gap="xs">
               <Box
@@ -139,8 +166,15 @@ export const GroupMembersModal = ({
           onChange={(e) => setSearchQuery(e.target.value)}
           styles={{
             input: {
+              backgroundColor: isDark ? theme.colors.dark[7] : 'white',
+              borderColor: isDark ? theme.colors.dark[4] : theme.colors.gray[3],
+              color: isDark ? theme.colors.gray[0] : 'black',
               '&:focus': {
-                borderColor: '#228be6',
+                borderColor: theme.colors.blue[6],
+                backgroundColor: isDark ? theme.colors.dark[6] : 'white',
+              },
+              '&::placeholder': {
+                color: isDark ? theme.colors.dark[2] : theme.colors.gray[5],
               },
             },
           }}
@@ -169,14 +203,20 @@ export const GroupMembersModal = ({
                         p="sm"
                         radius="md"
                         style={{
-                          backgroundColor: member.id === currentUserId ? '#e7f5ff' : 'transparent',
-                          border: member.id === currentUserId ? '1px solid #d0ebff' : '1px solid transparent',
+                          backgroundColor: member.id === currentUserId 
+                            ? (isDark ? theme.colors.dark[5] : theme.colors.blue[0])
+                            : 'transparent',
+                          border: member.id === currentUserId 
+                            ? `1px solid ${isDark ? theme.colors.blue[8] : theme.colors.blue[2]}`
+                            : '1px solid transparent',
                           transition: 'all 0.2s ease',
                           cursor: 'default',
                         }}
                         onMouseEnter={(e) => {
                           if (member.id !== currentUserId) {
-                            e.currentTarget.style.backgroundColor = '#f8f9fa';
+                            e.currentTarget.style.backgroundColor = isDark 
+                              ? theme.colors.dark[6] 
+                              : theme.colors.gray[0];
                           }
                         }}
                         onMouseLeave={(e) => {
@@ -200,7 +240,7 @@ export const GroupMembersModal = ({
                                   height: 12,
                                   borderRadius: '50%',
                                   backgroundColor: '#40c057',
-                                  border: '2px solid white',
+                                  border: `2px solid ${isDark ? theme.colors.dark[7] : 'white'}`,
                                   boxShadow: '0 0 0 1px rgba(0,0,0,0.1)',
                                 }}
                               />
@@ -226,9 +266,6 @@ export const GroupMembersModal = ({
                                   </Badge>
                                 )}
                               </Group>
-                              <Text size="xs" c="dimmed" truncate>
-                                {member.email || 'No email'}
-                              </Text>
                             </div>
                           </Group>
                           
@@ -249,7 +286,7 @@ export const GroupMembersModal = ({
                                 {!isAdmin(member.id) && onPromoteToAdmin && (
                                   <Menu.Item 
                                     leftSection={<Crown size={16} />}
-                                    onClick={() => onPromoteToAdmin(member.id)}
+                                    onClick={() => handlePromoteToAdmin(member)}
                                     color="blue"
                                   >
                                     Make Admin
@@ -292,15 +329,21 @@ export const GroupMembersModal = ({
                         p="sm"
                         radius="md"
                         style={{
-                          backgroundColor: member.id === currentUserId ? '#e7f5ff' : 'transparent',
-                          border: member.id === currentUserId ? '1px solid #d0ebff' : '1px solid transparent',
+                          backgroundColor: member.id === currentUserId 
+                            ? (isDark ? theme.colors.dark[5] : theme.colors.blue[0])
+                            : 'transparent',
+                          border: member.id === currentUserId 
+                            ? `1px solid ${isDark ? theme.colors.blue[8] : theme.colors.blue[2]}`
+                            : '1px solid transparent',
                           opacity: 0.7,
                           transition: 'all 0.2s ease',
                           cursor: 'default',
                         }}
                         onMouseEnter={(e) => {
                           if (member.id !== currentUserId) {
-                            e.currentTarget.style.backgroundColor = '#f8f9fa';
+                            e.currentTarget.style.backgroundColor = isDark 
+                              ? theme.colors.dark[6] 
+                              : theme.colors.gray[0];
                             e.currentTarget.style.opacity = '0.85';
                           }
                         }}
@@ -337,9 +380,6 @@ export const GroupMembersModal = ({
                                   </Badge>
                                 )}
                               </Group>
-                              <Text size="xs" c="dimmed" truncate>
-                                {member.email || 'No email'}
-                              </Text>
                             </div>
                           </Group>
 
@@ -360,7 +400,7 @@ export const GroupMembersModal = ({
                                 {!isAdmin(member.id) && onPromoteToAdmin && (
                                   <Menu.Item 
                                     leftSection={<Crown size={16} />}
-                                    onClick={() => onPromoteToAdmin(member.id)}
+                                    onClick={() => handlePromoteToAdmin(member)}
                                     color="blue"
                                   >
                                     Make Admin

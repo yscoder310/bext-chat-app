@@ -80,9 +80,6 @@ export const UserListModal = ({ opened, onClose, existingConversations }: UserLi
                       <Text size="sm" fw={500}>
                         {user.username || 'Unknown'}
                       </Text>
-                      <Text size="xs" c="dimmed">
-                        {user.email || ''}
-                      </Text>
                     </div>
                   </Group>
                   <Button size="xs" onClick={() => handleStartChat(user.id)}>

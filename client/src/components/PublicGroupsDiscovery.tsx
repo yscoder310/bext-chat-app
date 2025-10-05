@@ -1,4 +1,4 @@
-import { Modal, Stack, TextInput, ScrollArea, Group, Avatar, Text, Button, Badge, Pagination, Center } from '@mantine/core';
+import { Modal, Stack, TextInput, ScrollArea, Group, Avatar, Text, Button, Badge, Pagination, Center, useMantineTheme, useMantineColorScheme } from '@mantine/core';
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { conversationApi } from '../api/conversations';
@@ -14,6 +14,9 @@ interface PublicGroupsDiscoveryProps {
 }
 
 export const PublicGroupsDiscovery = ({ opened, onClose }: PublicGroupsDiscoveryProps) => {
+  const theme = useMantineTheme();
+  const { colorScheme } = useMantineColorScheme();
+  const isDark = colorScheme === 'dark';
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [debouncedSearch] = useDebouncedValue(search, 500);
@@ -78,8 +81,9 @@ export const PublicGroupsDiscovery = ({ opened, onClose }: PublicGroupsDiscovery
                   key={group.id}
                   p="md"
                   style={{
-                    border: '1px solid #e0e0e0',
+                    border: `1px solid ${isDark ? theme.colors.dark[4] : theme.colors.gray[3]}`,
                     borderRadius: '8px',
+                    backgroundColor: isDark ? theme.colors.dark[6] : 'white',
                   }}
                   align="start"
                 >

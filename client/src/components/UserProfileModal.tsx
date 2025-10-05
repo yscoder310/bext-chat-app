@@ -1,4 +1,4 @@
-import { Modal, Stack, TextInput, Button, PasswordInput, Tabs, Text, Divider, Group, Avatar } from '@mantine/core';
+import { Modal, Stack, TextInput, Button, PasswordInput, Tabs, Text, Divider, Group, Avatar, useMantineTheme, useMantineColorScheme } from '@mantine/core';
 import { useState, useEffect } from 'react';
 import { useAppSelector, useAppDispatch } from '../store/hooks';
 import { authApi } from '../api/auth';
@@ -13,6 +13,9 @@ interface UserProfileModalProps {
 }
 
 export const UserProfileModal = ({ opened, onClose }: UserProfileModalProps) => {
+  const theme = useMantineTheme();
+  const { colorScheme } = useMantineColorScheme();
+  const isDark = colorScheme === 'dark';
   const { user } = useAppSelector((state) => state.auth);
   const dispatch = useAppDispatch();
 
@@ -152,7 +155,7 @@ export const UserProfileModal = ({ opened, onClose }: UserProfileModalProps) => 
               color={getAvatarColor(user.username)}
               styles={{
                 root: {
-                  border: '3px solid #e9ecef',
+                  border: `3px solid ${isDark ? theme.colors.dark[4] : theme.colors.gray[3]}`,
                   boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
                 }
               }}

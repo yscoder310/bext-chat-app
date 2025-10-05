@@ -1,9 +1,12 @@
-import { Popover, ActionIcon, Badge, Stack, Group, Avatar, Text, Button, Loader, ScrollArea } from '@mantine/core';
+import { Popover, ActionIcon, Badge, Stack, Group, Avatar, Text, Button, Loader, ScrollArea, useMantineTheme, useMantineColorScheme } from '@mantine/core';
 import { Bell } from 'lucide-react';
 import { useState } from 'react';
 import { useChatRequests } from '../hooks/useChatRequests';
 
 export const ChatRequestButton = () => {
+  const theme = useMantineTheme();
+  const { colorScheme } = useMantineColorScheme();
+  const isDark = colorScheme === 'dark';
   const [opened, setOpened] = useState(false);
   const {
     pendingRequests,
@@ -88,8 +91,9 @@ export const ChatRequestButton = () => {
                     gap="xs"
                     p="sm"
                     style={{
-                      border: '1px solid #e9ecef',
+                      border: `1px solid ${isDark ? theme.colors.dark[4] : theme.colors.gray[3]}`,
                       borderRadius: '8px',
+                      backgroundColor: isDark ? theme.colors.dark[6] : 'white',
                     }}
                   >
                     <Group gap="sm" wrap="nowrap">
@@ -99,9 +103,6 @@ export const ChatRequestButton = () => {
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <Text size="sm" fw={500} truncate>
                           {request.senderId.username}
-                        </Text>
-                        <Text size="xs" c="dimmed" truncate>
-                          {request.senderId.email}
                         </Text>
                         {request.message && (
                           <Text size="xs" c="dimmed" mt={4} lineClamp={2}>
