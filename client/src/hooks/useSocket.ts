@@ -25,59 +25,60 @@ export const useSocket = () => {
   const { activeConversationId } = useAppSelector((state) => state.chat);
   const queryClient = useQueryClient();
 
-  // Connect to socket when token is available
+  /**
+   * Establish socket connection when authentication token is available
+   */
   useEffect(() => {
     if (token && !socketService.isConnected()) {
-      console.log('Connecting to socket with token...');
       socketService.connect(token);
     }
   }, [token]);
 
-  // Set up socket event listeners once
+  /**
+   * Set up socket event listeners for real-time updates
+   * Listeners are registered once and handle all socket events
+   */
   useEffect(() => {
-    console.log('Setting up socket event listeners...');
-
-    // New message
+    // Handle incoming messages
     socketService.onNewMessage((message: Message) => {
-      console.log('Redux: Dispatching addMessage', message);
       dispatch(addMessage(message, user?.id));
       
-      // Only show notifications for messages from other users
+      // Determine if this is user's own message
       const isOwnMessage = typeof message.senderId === 'string' 
         ? message.senderId === user?.id 
         : (message.senderId as any)?.id === user?.id;
       
-      // Don't notify for own messages or if the conversation is currently active
+      // Show notifications only for messages from others in inactive conversations
       if (!isOwnMessage && message.conversationId !== activeConversationId) {
-        // Play sound notification if enabled
+        // Play sound notification if enabled in settings
         const soundEnabled = getSetting('soundEnabled') as boolean;
         if (soundEnabled) {
           playNotificationSound();
         }
         
-        // Show desktop notification if enabled
+        // Show desktop notification if enabled and permission granted
         const desktopNotifications = getSetting('desktopNotifications') as boolean;
         if (desktopNotifications && 'Notification' in window && Notification.permission === 'granted') {
           const messagePreview = getSetting('messagePreview') as boolean;
           
-          // Get sender name
+          // Extract sender name from message
           let senderName = 'Unknown';
           if (typeof message.senderId !== 'string') {
             senderName = message.senderId.username || 'Unknown';
           }
           
-          // Create notification
+          // Create desktop notification
           const notification = new Notification(`New message from ${senderName}`, {
             body: messagePreview ? message.content : 'You have a new message',
-            icon: '/favicon.ico', // You can replace this with your app icon
-            tag: message.conversationId, // Prevents duplicate notifications for same conversation
+            icon: '/favicon.ico',
+            tag: message.conversationId, // Prevents duplicate notifications
             requireInteraction: false,
           });
           
-          // Close notification after 5 seconds
+          // Auto-close after 5 seconds
           setTimeout(() => notification.close(), 5000);
           
-          // Optional: Focus the app when notification is clicked
+          // Focus app when notification is clicked
           notification.onclick = () => {
             window.focus();
             notification.close();
@@ -86,23 +87,22 @@ export const useSocket = () => {
       }
     });
 
-    // Typing indicators
+    // Handle typing indicators (user started typing)
     socketService.onUserTyping((data) => {
-      console.log('Redux: Dispatching addTypingUser', data);
       dispatch(addTypingUser(data));
     });
 
+    // Handle typing indicators (user stopped typing)
     socketService.onUserStoppedTyping((data) => {
-      console.log('Redux: Dispatching removeTypingUser', data);
       dispatch(removeTypingUser(data));
     });
 
-    // Read receipts
+    // Handle read receipts
     socketService.onMessagesRead((data) => {
       dispatch(markMessagesAsRead(data));
     });
 
-    // Online status
+    // Handle user online status changes
     socketService.onUserOnline((data) => {
       dispatch(addOnlineUser(data.userId));
     });
@@ -111,146 +111,129 @@ export const useSocket = () => {
       dispatch(removeOnlineUser(data.userId));
     });
 
+    // Receive initial list of online users
     socketService.onOnlineUsers((users) => {
       dispatch(setOnlineUsers(users));
     });
 
-    // Chat requests
-    socketService.onNewChatRequest((request) => {
-      // Handle new chat request notification
-      console.log('New chat request:', request);
+    // Handle new chat request (1-on-1 conversation request)
+    socketService.onNewChatRequest(() => {
+      // TODO: Show notification or update UI for new chat request
     });
 
+    // Handle accepted chat request
     socketService.onChatRequestAccepted((conversation) => {
-      // Validate conversation data before adding
-      if (conversation && conversation.id && conversation.participants && Array.isArray(conversation.participants)) {
+      // Validate conversation structure before adding to state
+      if (conversation?.id && conversation?.participants && Array.isArray(conversation.participants)) {
         dispatch(addConversation(conversation));
       } else {
         console.error('Invalid conversation data received:', conversation);
       }
     });
 
-    // Group created
+    // Handle new group creation
     socketService.onGroupCreated((conversation) => {
-      console.log('Group created, adding to conversations:', conversation);
-      if (conversation && conversation.id && conversation.participants && Array.isArray(conversation.participants)) {
+      // Validate group conversation structure
+      if (conversation?.id && conversation?.participants && Array.isArray(conversation.participants)) {
         dispatch(addConversation(conversation));
       } else {
         console.error('Invalid group conversation data received:', conversation);
       }
     });
 
-    // Group updated (name change, admin promotion, member left)
+    /**
+     * Handle group updates (name change, admin promotion, member removed, etc.)
+     * - If user is still a member: update conversation data
+     * - If user was removed: remove conversation from list
+     */
     socketService.onGroupUpdated((conversation) => {
-      console.log('🔄 Group updated event received:', conversation);
-      console.log('Conversation ID:', conversation?.id);
-      console.log('Participants:', conversation?.participants);
-      console.log('Current user ID:', user?.id);
-      
-      if (conversation && conversation.id && conversation.participants && Array.isArray(conversation.participants)) {
-        // Check if current user is still in the participants list
+      if (conversation?.id && conversation?.participants && Array.isArray(conversation.participants)) {
+        // Check if current user is still a participant
         const isUserInConversation = conversation.participants.some((p: any) => 
           p.id === user?.id || p._id === user?.id
         );
         
-        console.log('Is current user still in conversation?', isUserInConversation);
-        
         if (isUserInConversation) {
-          // User is still a member - update the conversation
-          console.log('✅ Updating conversation for remaining member');
+          // User is still a member - update conversation
           dispatch(updateConversation(conversation));
         } else {
-          // User is no longer a member - remove the conversation
-          console.log('❌ User removed from conversation, removing from list');
+          // User was removed - remove conversation from list
           dispatch(removeConversation(conversation.id));
           
-          // Clear active conversation if this was the active one
+          // Clear active conversation if it's the one being removed
           if (activeConversationId === conversation.id) {
             dispatch(setActiveConversation(null));
           }
         }
       } else {
-        console.error('❌ Invalid updated group conversation data received:', conversation);
+        console.error('Invalid group conversation data received:', conversation);
       }
     });
 
-    // Conversation refresh - simpler approach, just refetch conversations
-    socketService.onConversationRefresh((data) => {
-      console.log('='.repeat(60));
-      console.log('🔄 [SOCKET] CONVERSATION-REFRESH EVENT RECEIVED');
-      console.log('🔄 [SOCKET] Data:', data);
-      console.log('🔄 [SOCKET] Current user:', user?.username, user?.id);
-      console.log('🔄 [SOCKET] This user should STAY in the group');
-      console.log('='.repeat(60));
-      
-      // Refetch conversations from server
-      // This will automatically show/hide the conversation based on current user's participation
-      console.log('🔄 [SOCKET] Invalidating conversations query');
+    /**
+     * Handle conversation refresh event
+     * Handle conversation refresh event
+     * Refetches all conversations from the server to ensure sync
+     */
+    socketService.onConversationRefresh(() => {
+      // Refetch conversations to sync with server state
       queryClient.invalidateQueries({ queryKey: ['conversations'] });
-      console.log('='.repeat(60));
     });
 
-    // Conversation removed - user left the group
+    /**
+     * Handle conversation removal (user left group)
+     * Removes conversation from local state and refetches for sync
+     */
     socketService.onConversationRemoved((data) => {
-      console.log('='.repeat(60));
-      console.log('🗑️ [SOCKET] CONVERSATION-REMOVED EVENT RECEIVED');
-      console.log('🗑️ [SOCKET] Conversation ID:', data.conversationId);
-      console.log('🗑️ [SOCKET] Current user:', user?.username, user?.id);
-      console.log('🗑️ [SOCKET] Active conversation ID:', activeConversationId);
-      console.log('='.repeat(60));
-      
-      // Remove conversation from local state immediately
+      // Remove conversation from Redux state immediately
       dispatch(removeConversation(data.conversationId));
       
-      // Clear active conversation if this was the active one
+      // Clear active conversation if it's the one being removed
       if (activeConversationId === data.conversationId) {
-        console.log('🗑️ [SOCKET] Clearing active conversation');
         dispatch(setActiveConversation(null));
       }
       
-      // Also refetch to ensure everything is in sync
-      console.log('🗑️ [SOCKET] Invalidating conversations query');
+      // Refetch to ensure sync with server
       queryClient.invalidateQueries({ queryKey: ['conversations'] });
-      console.log('='.repeat(60));
     });
 
-    // Invitation system events
-    socketService.onGroupInvitation((invitation) => {
-      console.log('📬 Received group invitation:', invitation);
-      // Show notification
-      // You can add a notification here or update a badge
+    // Handle group invitation received
+    socketService.onGroupInvitation(() => {
+      // Refetch invitations to show new invitation
       queryClient.invalidateQueries({ queryKey: ['invitations'] });
     });
 
-    socketService.onInvitationsSent((data) => {
-      console.log('✅ Invitations sent:', data);
-      // Invitations were successfully sent
+    // Handle invitations sent successfully
+    socketService.onInvitationsSent(() => {
+      // Invitations were sent - no action needed here
     });
 
+    // Handle accepted invitation (user joined group)
     socketService.onInvitationAccepted((conversation) => {
-      console.log('✅ Invitation accepted, joined group:', conversation);
-      if (conversation && conversation.id && conversation.participants && Array.isArray(conversation.participants)) {
+      // Validate and add newly joined conversation
+      if (conversation?.id && conversation?.participants && Array.isArray(conversation.participants)) {
         dispatch(addConversation(conversation));
-        // Refetch conversations to ensure sync
+        // Refresh conversations and invitations lists
         queryClient.invalidateQueries({ queryKey: ['conversations'] });
         queryClient.invalidateQueries({ queryKey: ['invitations'] });
       }
     });
 
-    socketService.onInvitationDeclined((data) => {
-      console.log('❌ Invitation declined:', data);
+    // Handle declined invitation
+    socketService.onInvitationDeclined(() => {
+      // Refresh invitations list to remove declined invitation
       queryClient.invalidateQueries({ queryKey: ['invitations'] });
     });
 
+    // Handle new member joined group
     socketService.onMemberJoined((data) => {
-      console.log('👤 Member joined group:', data);
-      // Refetch the specific conversation to update member list
+      // Refresh conversation to update member list
       queryClient.invalidateQueries({ queryKey: ['conversation', data.conversationId] });
       queryClient.invalidateQueries({ queryKey: ['conversations'] });
     });
 
+    // Cleanup: Remove all event listeners when component unmounts
     return () => {
-      console.log('Cleaning up socket event listeners...');
       socketService.offNewMessage();
       socketService.offUserTyping();
       socketService.offUserStoppedTyping();
@@ -265,19 +248,17 @@ export const useSocket = () => {
     // Small delay to ensure socket is fully connected
     const checkConnection = setInterval(() => {
       if (socketService.isConnected()) {
-        console.log('Socket connected, requesting online users...');
         socketService.getOnlineUsers();
         clearInterval(checkConnection);
       }
     }, 100);
 
-    // Periodically refresh online users (every 10 seconds for real-time updates)
+    // Periodically refresh online users list (every 10 seconds)
     const onlineUsersInterval = setInterval(() => {
       if (socketService.isConnected()) {
-        console.log('🔄 Periodic refresh: requesting online users...');
         socketService.getOnlineUsers();
       }
-    }, 10000); // Reduced from 30s to 10s for more frequent updates
+    }, 10000); // Refresh every 10 seconds
 
     return () => {
       clearInterval(checkConnection);

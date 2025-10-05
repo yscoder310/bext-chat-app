@@ -25,18 +25,20 @@ const chatSlice = createSlice({
   name: 'chat',
   initialState,
   reducers: {
+    /**
+     * Set conversations list
+     * - Sorts by last message timestamp (recent first)
+     * - Updates online status for all participants
+     */
     setConversations: (state, action: PayloadAction<Conversation[]>) => {
-      console.log('📝 [REDUX] setConversations called with', action.payload.length, 'conversations');
-      console.log('📝 [REDUX] Conversation IDs:', action.payload.map(c => `${c.id} (${c.type === 'group' ? c.groupName : 'DM'})`));
-      
-      // Sort conversations by lastMessageAt (most recent first)
+      // Sort conversations by last message time
       const sortedConversations = [...action.payload].sort((a, b) => {
         const aTime = a.lastMessageAt ? new Date(a.lastMessageAt).getTime() : 0;
         const bTime = b.lastMessageAt ? new Date(b.lastMessageAt).getTime() : 0;
         return bTime - aTime;
       });
       
-      // Map conversations to update online status without mutating
+      // Update participant online status based on onlineUsers list
       state.conversations = sortedConversations.map((conversation) => ({
         ...conversation,
         participants: conversation.participants.map((participant: any) => ({
@@ -45,9 +47,13 @@ const chatSlice = createSlice({
         })),
       }));
       
-      console.log('📝 [REDUX] setConversations completed. Total conversations:', state.conversations.length);
       state.isLoadingConversations = false;
     },
+    
+    /**
+     * Add a new conversation to the list
+     * Only adds if it doesn't already exist
+     */
     addConversation: (state, action: PayloadAction<Conversation>) => {
       const exists = state.conversations.find((c) => c.id === action.payload.id);
       if (!exists) {
@@ -62,42 +68,37 @@ const chatSlice = createSlice({
         state.conversations.unshift(conversationWithOnlineStatus);
       }
     },
+    
+    /**
+     * Update an existing conversation
+     * - Merges new data with existing conversation
+     * - Recalculates participant online status if participants changed
+     */
     updateConversation: (state, action: PayloadAction<Partial<Conversation> & { id: string }>) => {
-      console.log('📝 [REDUX] updateConversation called for:', action.payload.id);
-      console.log('📝 [REDUX] Update data:', action.payload);
-      
       const index = state.conversations.findIndex((c) => c.id === action.payload.id);
       if (index !== -1) {
-        console.log('📝 [REDUX] Found conversation at index:', index);
-        console.log('📝 [REDUX] Old participants:', state.conversations[index].participants?.length);
-        console.log('📝 [REDUX] New participants:', action.payload.participants?.length);
-        
-        // Update conversation data
+        // Merge updated fields into existing conversation
         state.conversations[index] = { ...state.conversations[index], ...action.payload };
         
-        // If participants were updated, recalculate their online status
+        // Recalculate online status for updated participants
         if (action.payload.participants) {
           state.conversations[index].participants = action.payload.participants.map((participant: any) => ({
             ...participant,
             isOnline: state.onlineUsers.includes(participant.id),
           }));
         }
-        
-        console.log('📝 [REDUX] Updated participants:', state.conversations[index].participants?.length);
-      } else {
-        console.warn('📝 [REDUX] Conversation not found for update:', action.payload.id);
       }
     },
+    
+    /**
+     * Remove a conversation from the list
+     * Also clears it as active conversation if it's currently selected
+     */
     removeConversation: (state, action: PayloadAction<string>) => {
-      console.log('📝 [REDUX] removeConversation called for:', action.payload);
-      console.log('📝 [REDUX] Conversations before removal:', state.conversations.length);
-      
       state.conversations = state.conversations.filter((c) => c.id !== action.payload);
       
-      console.log('📝 [REDUX] Conversations after removal:', state.conversations.length);
-      
+      // Clear active conversation if it's the one being removed
       if (state.activeConversationId === action.payload) {
-        console.log('📝 [REDUX] Clearing active conversation');
         state.activeConversationId = null;
       }
     },

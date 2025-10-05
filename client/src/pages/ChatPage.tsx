@@ -1,4 +1,4 @@
-import { useEffect, lazy, Suspense } from 'react';
+import { lazy, Suspense } from 'react';
 import { AppShell, Burger, Group, Title, Avatar, Menu, useMantineColorScheme, useMantineTheme } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import { LogOut, Settings, User } from 'lucide-react';
@@ -23,12 +23,8 @@ export const ChatPage = () => {
   const [settingsOpened, { open: openSettings, close: closeSettings }] = useDisclosure(false);
   const { user, logout } = useAuth();
   
-  // Initialize socket connection and listeners
+  // Initialize socket connection and set up event listeners
   useSocket();
-
-  useEffect(() => {
-    console.log('ChatPage mounted, socket should be initializing...');
-  }, []);
 
   return (
     <AppShell

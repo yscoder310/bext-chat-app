@@ -34,13 +34,12 @@ export const useChat = () => {
     refetchOnMount: true, // Refetch when component mounts
   });
 
-  // Update Redux when conversations are fetched
+  /**
+   * Sync conversations from API to Redux store
+   * Triggered whenever the conversations query data changes
+   */
   useEffect(() => {
     if (conversationsQuery.data) {
-      console.log('🔄 [USE_CHAT] Conversations data changed, updating Redux');
-      console.log('🔄 [USE_CHAT] New data has', conversationsQuery.data.length, 'conversations');
-      console.log('🔄 [USE_CHAT] User:', user?.username);
-      console.log('🔄 [USE_CHAT] Stack trace:', new Error().stack);
       dispatch(setConversations(conversationsQuery.data));
     }
   }, [conversationsQuery.data, dispatch]);
@@ -233,20 +232,14 @@ export const useChat = () => {
     },
   });
 
-  // Leave group
+  /**
+   * Leave a group conversation
+   * Note: The UI update is handled by socket events (conversation-removed)
+   * This ensures all users see consistent state
+   */
   const leaveGroupMutation = useMutation({
-    mutationFn: (conversationId: string) => {
-      console.log('🚪 [LEAVE GROUP] Starting leave group for conversation:', conversationId);
-      return conversationApi.leaveGroup(conversationId);
-    },
-    onSuccess: (_, conversationId) => {
-      console.log('🚪 [LEAVE GROUP] Leave successful for conversation:', conversationId);
-      console.log('🚪 [LEAVE GROUP] Current user:', user?.username);
-      
-      // DON'T manually remove - let the socket event handle it
-      // This ensures all users (including the one leaving) get the same update
-      console.log('🚪 [LEAVE GROUP] Waiting for socket event to update UI');
-      
+    mutationFn: (conversationId: string) => conversationApi.leaveGroup(conversationId),
+    onSuccess: () => {
       notifications.show({
         title: 'Success',
         message: 'You have left the group',
@@ -254,7 +247,7 @@ export const useChat = () => {
       });
     },
     onError: (error) => {
-      console.error('🚪 [LEAVE GROUP] Error:', error);
+      console.error('Failed to leave group:', error);
       notifications.show({
         title: 'Error',
         message: 'Failed to leave group',

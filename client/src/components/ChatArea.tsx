@@ -43,46 +43,44 @@ export const ChatArea = () => {
   const { sendMessage: socketSendMessage, startTyping, stopTyping } = useSocket();
   const { user } = useAppSelector((state) => state.auth);
 
-  // Check if current user is an admin of the group
+  /**
+   * Check if current user is an admin of the group
+   * Supports both the new groupAdmins array and legacy groupAdmin field for backward compatibility
+   */
   const isCurrentUserAdmin = () => {
     if (!activeConversation || activeConversation.type !== 'group' || !user?.id) {
       return false;
     }
     
-    console.log('🔍 Checking admin status:', {
-      userId: user.id,
-      groupAdmin: activeConversation.groupAdmin,
-      groupAdmins: activeConversation.groupAdmins,
-      conversationType: activeConversation.type
-    });
-    
-    // Check in groupAdmins array (new way)
+    // Primary check: Look in the groupAdmins array (supports multiple admins)
     if (activeConversation.groupAdmins && Array.isArray(activeConversation.groupAdmins) && activeConversation.groupAdmins.length > 0) {
       const isInAdmins = activeConversation.groupAdmins.some((admin: any) => {
+        // Handle both string IDs and admin objects with id property
         if (typeof admin === 'string') {
           return admin === user.id;
         }
         return admin?.id === user.id;
       });
-      console.log('✅ isInAdmins (groupAdmins array):', isInAdmins);
       return isInAdmins;
     }
     
-    // Fallback to single groupAdmin (old way, for backward compatibility)
+    // Fallback check: Use single groupAdmin field for backward compatibility
     const isSingleAdmin = activeConversation.groupAdmin?.id === user.id;
-    console.log('✅ isSingleAdmin (groupAdmin):', isSingleAdmin);
     return isSingleAdmin;
   };
 
-  // Clean up typing when conversation changes
+  /**
+   * Clean up typing indicator when switching between conversations
+   * Ensures users don't see stale typing indicators from previous chats
+   */
   useEffect(() => {
-    // If conversation changed and we were typing in the previous one, stop typing
     if (lastConversationIdRef.current && lastConversationIdRef.current !== activeConversation?.id) {
+      // Stop typing indicator for the previous conversation
       if (isTypingRef.current) {
-        console.log('🔄 Conversation changed, stopping typing in previous conversation');
         stopTyping(lastConversationIdRef.current);
         isTypingRef.current = false;
       }
+      // Clear any pending typing timeout
       if (typingTimeoutRef.current) {
         clearTimeout(typingTimeoutRef.current);
         typingTimeoutRef.current = null;
@@ -91,16 +89,15 @@ export const ChatArea = () => {
     lastConversationIdRef.current = activeConversation?.id || null;
   }, [activeConversation?.id, stopTyping]);
 
-  // Handle visibility change (window focus/blur)
+  /**
+   * Stop typing indicator when window loses focus (tab switch, minimize, etc.)
+   * Prevents typing indicator from staying active indefinitely
+   */
   useEffect(() => {
     const handleVisibilityChange = () => {
-      if (document.hidden) {
-        // Window lost focus - stop typing indicator
-        if (isTypingRef.current && activeConversation?.id) {
-          console.log('👁️ Window hidden, stopping typing indicator');
-          stopTyping(activeConversation.id);
-          isTypingRef.current = false;
-        }
+      if (document.hidden && isTypingRef.current && activeConversation?.id) {
+        stopTyping(activeConversation.id);
+        isTypingRef.current = false;
       }
     };
 
@@ -111,7 +108,9 @@ export const ChatArea = () => {
     };
   }, [activeConversation?.id, stopTyping]);
 
-  // Clean up typing timeout on unmount
+  /**
+   * Cleanup: Stop typing indicator and clear timeout on component unmount
+   */
   useEffect(() => {
     return () => {
       if (typingTimeoutRef.current) {
@@ -131,7 +130,7 @@ export const ChatArea = () => {
       content: content.trim(),
     });
     
-    // Clear typing timeout and stop typing
+    // Clear typing state after sending message
     if (typingTimeoutRef.current) {
       clearTimeout(typingTimeoutRef.current);
     }
@@ -141,33 +140,38 @@ export const ChatArea = () => {
     }
   };
 
+  /**
+   * Start typing indicator when user begins typing
+   * Auto-stops after 3 seconds of inactivity
+   */
   const handleTypingStart = () => {
     if (!activeConversation) return;
 
-    // Clear existing timeout
+    // Clear existing timeout to reset the 3-second countdown
     if (typingTimeoutRef.current) {
       clearTimeout(typingTimeoutRef.current);
     }
 
+    // Start typing indicator if not already active
     if (!isTypingRef.current) {
-      console.log('⌨️ Starting typing indicator for conversation:', activeConversation.id);
       startTyping(activeConversation.id);
       isTypingRef.current = true;
     }
     
-    // Set timeout to stop typing after 3 seconds of inactivity
+    // Auto-stop typing indicator after 3 seconds of inactivity
     typingTimeoutRef.current = window.setTimeout(() => {
       if (isTypingRef.current && activeConversation?.id) {
-        console.log('⏱️ Typing timeout - stopping typing indicator');
         stopTyping(activeConversation.id);
         isTypingRef.current = false;
       }
     }, 3000);
   };
 
+  /**
+   * Immediately stop typing indicator (called when input is cleared)
+   */
   const handleTypingStop = () => {
     if (isTypingRef.current && activeConversation?.id) {
-      console.log('🛑 Input cleared - stopping typing indicator');
       stopTyping(activeConversation.id);
       isTypingRef.current = false;
     }

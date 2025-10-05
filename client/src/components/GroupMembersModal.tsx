@@ -28,15 +28,7 @@ export const GroupMembersModal = ({
   
   const [searchQuery, setSearchQuery] = useState('');
   
-  console.log('📋 GroupMembersModal - conversation data:', {
-    type: conversation.type,
-    groupName: conversation.groupName,
-    groupAdmin: conversation.groupAdmin,
-    groupAdmins: conversation.groupAdmins,
-    participantsCount: conversation.participants?.length,
-    currentUserId,
-  });
-  
+  // Only show members modal for group conversations
   if (conversation.type !== 'group') return null;
 
   // Handle promote to admin with confirmation
@@ -55,34 +47,28 @@ export const GroupMembersModal = ({
     });
   };
 
-  // Check if user is an admin (supports multiple admins)
+  /**
+   * Check if a user is an admin in the group
+   * Supports both the new groupAdmins array (multiple admins) and legacy groupAdmin field
+   */
   const isAdmin = (userId: string) => {
-    console.log('🔍 Checking if user is admin:', {
-      userId,
-      groupAdmin: conversation.groupAdmin,
-      groupAdmins: conversation.groupAdmins,
-    });
-    
-    // Check in groupAdmins array (new way)
+    // Primary check: Look in groupAdmins array
     if (conversation.groupAdmins && Array.isArray(conversation.groupAdmins) && conversation.groupAdmins.length > 0) {
-      const result = conversation.groupAdmins.some((admin) => {
+      return conversation.groupAdmins.some((admin) => {
+        // Handle both string IDs and admin objects
         if (typeof admin === 'string') {
           return admin === userId;
         }
         return admin?.id === userId;
       });
-      console.log('✅ isAdmin (groupAdmins):', result);
-      return result;
     }
-    // Fallback to single groupAdmin (old way)
-    const result = conversation.groupAdmin?.id === userId;
-    console.log('✅ isAdmin (groupAdmin fallback):', result);
-    return result;
+    
+    // Fallback: Check single groupAdmin field for backward compatibility
+    return conversation.groupAdmin?.id === userId;
   };
   
+  // Check if the current user is an admin (determines if they can promote/remove members)
   const isCurrentUserAdmin = currentUserId ? isAdmin(currentUserId) : false;
-  
-  console.log('👤 Current user admin status:', isCurrentUserAdmin);
 
   // Filter members based on search
   const filteredMembers = useMemo(() => {
