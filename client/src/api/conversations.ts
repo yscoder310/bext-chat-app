@@ -50,6 +50,14 @@ export const conversationApi = {
     return data.data;
   },
 
+  updateGroupDetails: async (
+    conversationId: string, 
+    updates: { groupName?: string; groupDescription?: string }
+  ): Promise<Conversation> => {
+    const { data } = await axiosInstance.put(`/conversations/${conversationId}/details`, updates);
+    return data.data;
+  },
+
   promoteToAdmin: async (conversationId: string, newAdminId: string): Promise<Conversation> => {
     const { data} = await axiosInstance.put(`/conversations/${conversationId}/admin`, {
       newAdminId,

@@ -51,7 +51,15 @@ const chatSlice = createSlice({
     addConversation: (state, action: PayloadAction<Conversation>) => {
       const exists = state.conversations.find((c) => c.id === action.payload.id);
       if (!exists) {
-        state.conversations.unshift(action.payload);
+        // Set online status for participants before adding
+        const conversationWithOnlineStatus = {
+          ...action.payload,
+          participants: action.payload.participants.map((participant: any) => ({
+            ...participant,
+            isOnline: state.onlineUsers.includes(participant.id),
+          })),
+        };
+        state.conversations.unshift(conversationWithOnlineStatus);
       }
     },
     updateConversation: (state, action: PayloadAction<Partial<Conversation> & { id: string }>) => {
@@ -64,7 +72,16 @@ const chatSlice = createSlice({
         console.log('📝 [REDUX] Old participants:', state.conversations[index].participants?.length);
         console.log('📝 [REDUX] New participants:', action.payload.participants?.length);
         
+        // Update conversation data
         state.conversations[index] = { ...state.conversations[index], ...action.payload };
+        
+        // If participants were updated, recalculate their online status
+        if (action.payload.participants) {
+          state.conversations[index].participants = action.payload.participants.map((participant: any) => ({
+            ...participant,
+            isOnline: state.onlineUsers.includes(participant.id),
+          }));
+        }
         
         console.log('📝 [REDUX] Updated participants:', state.conversations[index].participants?.length);
       } else {

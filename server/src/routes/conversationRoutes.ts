@@ -13,6 +13,7 @@ router.post('/group', createGroupValidation, ConversationController.createGroup)
 router.get('/', ConversationController.getUserConversations);
 router.get('/:conversationId', ConversationController.getConversationById);
 router.put('/:conversationId/name', ConversationController.updateGroupName);
+router.put('/:conversationId/details', ConversationController.updateGroupDetails);
 router.put('/:conversationId/admin', ConversationController.promoteToAdmin);
 router.post('/:conversationId/participants', ConversationController.addParticipant);
 router.post('/:conversationId/leave', ConversationController.leaveGroup);

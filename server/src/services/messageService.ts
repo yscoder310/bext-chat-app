@@ -93,15 +93,24 @@ export class MessageService {
       throw new AppError('You are not a participant of this conversation', 403);
     }
 
+    // Get user's join date for privacy filtering
+    const userJoinDate = conversation.memberJoinDates?.get(userId);
+    
     const skip = (page - 1) * limit;
 
-    const messages = await Message.find({ conversationId })
+    // Build query - only show messages sent after user joined (for groups)
+    const messageQuery: any = { conversationId };
+    if (conversation.type === 'group' && userJoinDate) {
+      messageQuery.createdAt = { $gte: userJoinDate };
+    }
+
+    const messages = await Message.find(messageQuery)
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
       .populate('senderId', 'username avatar isOnline');
 
-    const total = await Message.countDocuments({ conversationId });
+    const total = await Message.countDocuments(messageQuery);
 
     return {
       messages: messages.reverse().map(formatMessage),

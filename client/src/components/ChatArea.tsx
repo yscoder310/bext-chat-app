@@ -17,7 +17,7 @@ import {
   Modal,
   Button,
 } from '@mantine/core';
-import { IconSend, IconMoodSmile, IconPaperclip, IconUsers, IconEdit, IconCheck, IconX, IconDots, IconPlus, IconLogout, IconUserPlus } from '@tabler/icons-react';
+import { IconSend, IconMoodSmile, IconPaperclip, IconUsers, IconEdit, IconCheck, IconX, IconDots, IconLogout, IconUserPlus, IconUserMinus, IconUserCheck, IconCrown } from '@tabler/icons-react';
 import { 
   format, 
   isToday, 
@@ -34,6 +34,7 @@ import { InviteMembersModal } from './InviteMembersModal';
 import { useSocket } from '../hooks/useSocket';
 import { useAppSelector } from '../store/hooks';
 import { GroupMembersModal } from './GroupMembersModal';
+import { EditGroupDetailsModal } from './EditGroupDetailsModal';
 
 const EmptyState = () => {
   return (
@@ -86,6 +87,7 @@ export const ChatArea = () => {
   const [editedGroupName, setEditedGroupName] = useState('');
   const [membersModalOpened, { open: openMembersModal, close: closeMembersModal }] = useDisclosure(false);
   const [inviteMembersOpened, { open: openInviteMembers, close: closeInviteMembers }] = useDisclosure(false);
+  const [editDetailsOpened, { open: openEditDetails, close: closeEditDetails }] = useDisclosure(false);
   const [leaveGroupConfirm, setLeaveGroupConfirm] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<number | null>(null);
@@ -611,12 +613,20 @@ export const ChatArea = () => {
                 </Menu.Target>
                 <Menu.Dropdown>
                   {isCurrentUserAdmin() && (
-                    <Menu.Item 
-                      leftSection={<IconUserPlus size={16} />}
-                      onClick={openInviteMembers}
-                    >
-                      Invite Members
-                    </Menu.Item>
+                    <>
+                      <Menu.Item 
+                        leftSection={<IconEdit size={16} />}
+                        onClick={openEditDetails}
+                      >
+                        Edit Group Details
+                      </Menu.Item>
+                      <Menu.Item 
+                        leftSection={<IconUserPlus size={16} />}
+                        onClick={openInviteMembers}
+                      >
+                        Invite Members
+                      </Menu.Item>
+                    </>
                   )}
                   <Menu.Item 
                     leftSection={<IconLogout size={16} />}
@@ -654,13 +664,103 @@ export const ChatArea = () => {
         }}
       >
         <Stack gap="sm">
-          {activeMessages
-            .filter(msg => msg.messageType !== 'system') // Hide system messages
-            .map((msg) => {
-            // Determine if this is the user's own message
+          {activeMessages.map((msg, index) => {
+            // Render system messages differently
+            if (msg.messageType === 'system') {
+              // Determine icon based on system message type
+              let icon = null;
+              let iconColor = '#868e96';
+              
+              switch (msg.systemMessageType) {
+                case 'member-added':
+                  icon = <IconUserPlus size={14} />;
+                  iconColor = '#40c057';
+                  break;
+                case 'member-left':
+                case 'member-removed':
+                  icon = <IconUserMinus size={14} />;
+                  iconColor = '#fa5252';
+                  break;
+                case 'admin-promoted':
+                  icon = <IconCrown size={14} />;
+                  iconColor = '#fab005';
+                  break;
+                case 'group-created':
+                  icon = <IconUsers size={14} />;
+                  iconColor = '#228be6';
+                  break;
+                default:
+                  icon = <IconUserCheck size={14} />;
+              }
+
+              return (
+                <Center key={msg._id} my="xs">
+                  <Paper
+                    p="xs"
+                    px="md"
+                    radius="xl"
+                    style={{
+                      backgroundColor: '#f8f9fa',
+                      border: '1px solid #e9ecef',
+                      maxWidth: '80%',
+                    }}
+                  >
+                    <Group gap="xs" justify="center">
+                      <Box style={{ color: iconColor, display: 'flex', alignItems: 'center' }}>
+                        {icon}
+                      </Box>
+                      <Text
+                        size="xs"
+                        c="dimmed"
+                        ta="center"
+                        style={{
+                          fontStyle: 'italic',
+                          letterSpacing: '0.2px',
+                        }}
+                      >
+                        {msg.content}
+                      </Text>
+                      <Text
+                        size="xs"
+                        c="dimmed"
+                        style={{
+                          fontSize: '9px',
+                          opacity: 0.7,
+                        }}
+                      >
+                        {formatMessageTime(msg.createdAt)}
+                      </Text>
+                    </Group>
+                  </Paper>
+                </Center>
+              );
+            }
+
+            // Regular message rendering
             const isOwn = typeof msg.senderId === 'string' 
               ? msg.senderId === user?.id 
               : (msg.senderId as any)?.id === user?.id;
+
+            // Check if this message should be clustered with the previous one
+            const prevMsg = index > 0 ? activeMessages[index - 1] : null;
+            
+            const prevSenderId = prevMsg && typeof prevMsg.senderId === 'string' 
+              ? prevMsg.senderId 
+              : (prevMsg?.senderId as any)?.id;
+            
+            const currentSenderId = typeof msg.senderId === 'string' 
+              ? msg.senderId 
+              : (msg.senderId as any)?.id;
+            
+            // Messages are clustered if:
+            // 1. Previous message exists and is not a system message
+            // 2. Same sender as previous message
+            // 3. Messages are within 2 minutes of each other
+            const timeDiff = prevMsg ? new Date(msg.createdAt).getTime() - new Date(prevMsg.createdAt).getTime() : Infinity;
+            const isClusteredMessage = prevMsg && 
+              prevMsg.messageType !== 'system' && 
+              prevSenderId === currentSenderId && 
+              timeDiff < 120000; // 2 minutes
 
             return (
               <Group
@@ -669,20 +769,29 @@ export const ChatArea = () => {
                 align="flex-start"
                 gap="xs"
                 wrap="nowrap"
-                style={{ width: '100%' }}
+                style={{ 
+                  width: '100%',
+                  marginTop: isClusteredMessage ? '2px' : undefined, // Tight spacing for clustered messages
+                }}
               >
                 {!isOwn && (
-                  <Avatar 
-                    size={36} 
-                    radius="xl" 
-                    color="blue"
-                    style={{
-                      flexShrink: 0,
-                      boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
-                    }}
-                  >
-                    {typeof msg.senderId === 'string' ? 'U' : msg.senderId.username[0].toUpperCase()}
-                  </Avatar>
+                  isClusteredMessage ? (
+                    // Spacer for clustered messages (same width as avatar)
+                    <div style={{ width: 36, flexShrink: 0 }} />
+                  ) : (
+                    // Show avatar for first message in cluster
+                    <Avatar 
+                      size={36} 
+                      radius="xl" 
+                      color="blue"
+                      style={{
+                        flexShrink: 0,
+                        boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+                      }}
+                    >
+                      {typeof msg.senderId === 'string' ? 'U' : msg.senderId.username[0].toUpperCase()}
+                    </Avatar>
+                  )
                 )}
                 <Paper
                   p="xs"
@@ -703,7 +812,8 @@ export const ChatArea = () => {
                     position: 'relative',
                   }}
                 >
-                  {!isOwn && typeof msg.senderId !== 'string' && (
+                  {/* Only show username for first message in cluster */}
+                  {!isOwn && !isClusteredMessage && typeof msg.senderId !== 'string' && (
                     <Text 
                       size="xs" 
                       fw={600} 
@@ -876,17 +986,25 @@ export const ChatArea = () => {
 
       {/* Group Members Modal */}
       {activeConversation.type === 'group' && (
-        <GroupMembersModal
-          opened={membersModalOpened}
-          onClose={closeMembersModal}
-          conversation={activeConversation}
-          currentUserId={user?.id}
-          onPromoteToAdmin={(newAdminId) => {
-            if (activeConversation.id) {
-              promoteToAdmin({ conversationId: activeConversation.id, newAdminId });
-            }
-          }}
-        />
+        <>
+          <GroupMembersModal
+            opened={membersModalOpened}
+            onClose={closeMembersModal}
+            conversation={activeConversation}
+            currentUserId={user?.id}
+            onPromoteToAdmin={(newAdminId) => {
+              if (activeConversation.id) {
+                promoteToAdmin({ conversationId: activeConversation.id, newAdminId });
+              }
+            }}
+          />
+
+          <EditGroupDetailsModal
+            opened={editDetailsOpened}
+            onClose={closeEditDetails}
+            conversation={activeConversation}
+          />
+        </>
       )}
 
       {/* Leave Group Confirmation Modal */}

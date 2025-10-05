@@ -70,6 +70,13 @@ const conversationSchema = new Schema<IConversationDocument>(
       of: Number,
       default: new Map(),
     },
+    memberJoinDates: {
+      type: Map,
+      of: Date,
+      default: new Map(),
+      // Maps userId -> Date when they joined
+      // Used to filter messages: only show messages sent after join date
+    },
   },
   {
     timestamps: true,

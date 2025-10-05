@@ -328,7 +328,13 @@ export const initializeSocket = (httpServer: HTTPServer) => {
         // Notify user
         socket.emit('invitation-accepted', result.conversation);
 
-        // Notify existing members
+        // Emit system message to all members (including the new member)
+        if (result.systemMessage) {
+          chatNamespace.to(`conversation:${result.conversation.id}`).emit('new-message', result.systemMessage);
+          console.log(`📨 Emitted system message for invitation acceptance to conversation: ${result.conversation.id}`);
+        }
+
+        // Notify existing members about new member
         socket.to(`conversation:${result.conversation.id}`).emit('member-joined', {
           conversationId: result.conversation.id,
           member: result.conversation.participants.find((m: any) => m.id === userId),

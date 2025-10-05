@@ -3,8 +3,8 @@ import Message from '../models/Message';
 import { AppError } from '../middleware/errorHandler';
 
 export class ConversationService {
-  // Helper to create system messages
-  private static async createSystemMessage(
+  // Helper to create system messages - PUBLIC so controllers can emit socket events
+  static async createSystemMessage(
     conversationId: string,
     systemMessageType: 'member-added' | 'member-removed' | 'admin-promoted' | 'member-left' | 'group-created',
     content: string,
@@ -26,7 +26,18 @@ export class ConversationService {
       lastMessageAt: new Date(),
     });
 
-    return message;
+    // Format message for socket emission (like regular messages)
+    return {
+      _id: String(message._id),
+      conversationId: String(message.conversationId),
+      messageType: message.messageType,
+      systemMessageType: message.systemMessageType,
+      content: message.content,
+      metadata: message.metadata,
+      createdAt: message.createdAt,
+      isRead: message.isRead,
+      readBy: message.readBy,
+    };
   }
 
   static async createOneToOneConversation(userId: string, otherUserId: string) {
@@ -112,6 +123,13 @@ export class ConversationService {
       participants.push(adminId);
     }
 
+    // Initialize join dates for all initial members
+    const now = new Date();
+    const memberJoinDates = new Map<string, Date>();
+    participants.forEach(userId => {
+      memberJoinDates.set(userId, now);
+    });
+
     // Create group conversation
     const conversation = await Conversation.create({
       type: 'group',
@@ -121,6 +139,7 @@ export class ConversationService {
       groupAdmin: adminId, // Keep for backward compatibility
       groupAdmins: [adminId],
       participants,
+      memberJoinDates, // Set join dates for initial members
       groupSettings: {
         maxMembers: settings?.maxMembers || 500,
         allowMemberInvites: settings?.allowMemberInvites || false,
@@ -138,34 +157,49 @@ export class ConversationService {
       throw new AppError('Failed to create group conversation', 500);
     }
 
+    // Create system message for group creation
+    const adminUser = populatedConversation.participants.find((p: any) => String(p._id) === adminId);
+    const systemMessage = await this.createSystemMessage(
+      String(conversation._id),
+      'group-created',
+      `${(adminUser as any)?.username || 'A member'} created the group`,
+      { userId: adminId }
+    );
+
     // Format the response
     const unreadCount = populatedConversation.unreadCount.get(adminId) || 0;
     return {
-      id: String(populatedConversation._id),
-      type: populatedConversation.type,
-      participants: populatedConversation.participants.map((p: any) => ({
-        id: String(p._id),
-        username: p.username,
-        avatar: p.avatar,
-        isOnline: p.isOnline,
-        lastSeen: p.lastSeen,
-      })),
-      groupName: populatedConversation.groupName,
-      groupAdmin: populatedConversation.groupAdmin ? {
-        id: String((populatedConversation.groupAdmin as any)._id),
-        username: (populatedConversation.groupAdmin as any).username,
-        avatar: (populatedConversation.groupAdmin as any).avatar,
-      } : undefined,
-      groupAdmins: populatedConversation.groupAdmins?.map((admin: any) => ({
-        id: String(admin._id),
-        username: admin.username,
-        avatar: admin.avatar,
-      })) || [],
-      lastMessage: populatedConversation.lastMessage,
-      lastMessageAt: populatedConversation.lastMessageAt,
-      unreadCount,
-      createdAt: populatedConversation.createdAt,
-      updatedAt: populatedConversation.updatedAt,
+      conversation: {
+        id: String(populatedConversation._id),
+        type: populatedConversation.type,
+        participants: populatedConversation.participants.map((p: any) => ({
+          id: String(p._id),
+          username: p.username,
+          avatar: p.avatar,
+          isOnline: p.isOnline,
+          lastSeen: p.lastSeen,
+        })),
+        groupName: populatedConversation.groupName,
+        groupDescription: populatedConversation.groupDescription,
+        groupType: populatedConversation.groupType,
+        groupAdmin: populatedConversation.groupAdmin ? {
+          id: String((populatedConversation.groupAdmin as any)._id),
+          username: (populatedConversation.groupAdmin as any).username,
+          avatar: (populatedConversation.groupAdmin as any).avatar,
+        } : undefined,
+        groupAdmins: populatedConversation.groupAdmins?.map((admin: any) => ({
+          id: String(admin._id),
+          username: admin.username,
+          avatar: admin.avatar,
+        })) || [],
+        groupSettings: populatedConversation.groupSettings,
+        lastMessage: populatedConversation.lastMessage,
+        lastMessageAt: populatedConversation.lastMessageAt,
+        unreadCount,
+        createdAt: populatedConversation.createdAt,
+        updatedAt: populatedConversation.updatedAt,
+      },
+      systemMessage,
     };
   }
 
@@ -281,6 +315,7 @@ export class ConversationService {
     }
 
     conversation.participants.push(newParticipantId);
+    conversation.memberJoinDates.set(newParticipantId, new Date()); // Set join date for privacy
     conversation.unreadCount.set(newParticipantId, 0);
     await conversation.save();
 
@@ -403,14 +438,14 @@ export class ConversationService {
     console.log(`✅ Remaining participants: ${updatedConversation.participants.length}`);
 
     // Create system message
-    await this.createSystemMessage(
+    const systemMessage = await this.createSystemMessage(
       conversationId,
       'member-left',
       `${leavingMember?.username || 'A member'} left the group`,
       { userId }
     );
 
-    return { success: true };
+    return { success: true, systemMessage };
   }
 
   static async deleteConversation(conversationId: string, userId: string) {
@@ -504,6 +539,87 @@ export class ConversationService {
     };
   }
 
+  // Update group details (name and description)
+  static async updateGroupDetails(
+    conversationId: string,
+    adminId: string,
+    updates: { groupName?: string; groupDescription?: string }
+  ) {
+    const conversation = await Conversation.findById(conversationId);
+
+    if (!conversation) {
+      throw new AppError('Conversation not found', 404);
+    }
+
+    if (conversation.type !== 'group') {
+      throw new AppError('Only group conversations can have their details updated', 400);
+    }
+
+    // Check if current user is an admin
+    const isAdmin = conversation.groupAdmins?.includes(adminId) || 
+                    String(conversation.groupAdmin) === adminId;
+    
+    if (!isAdmin) {
+      throw new AppError('Only admins can update the group details', 403);
+    }
+
+    // Update fields if provided
+    if (updates.groupName !== undefined) {
+      if (!updates.groupName.trim()) {
+        throw new AppError('Group name cannot be empty', 400);
+      }
+      conversation.groupName = updates.groupName.trim();
+    }
+
+    if (updates.groupDescription !== undefined) {
+      conversation.groupDescription = updates.groupDescription.trim();
+    }
+
+    await conversation.save();
+
+    // Return formatted conversation
+    const populatedConversation = await Conversation.findById(conversationId)
+      .populate('participants', 'username avatar isOnline lastSeen')
+      .populate('groupAdmin', 'username avatar')
+      .populate('groupAdmins', 'username avatar');
+
+    if (!populatedConversation) {
+      throw new AppError('Failed to retrieve updated conversation', 500);
+    }
+
+    const unreadCount = populatedConversation.unreadCount.get(adminId) || 0;
+    return {
+      id: String(populatedConversation._id),
+      type: populatedConversation.type,
+      participants: populatedConversation.participants.map((p: any) => ({
+        id: String(p._id),
+        username: p.username,
+        avatar: p.avatar,
+        isOnline: p.isOnline,
+        lastSeen: p.lastSeen,
+      })),
+      groupName: populatedConversation.groupName,
+      groupDescription: populatedConversation.groupDescription,
+      groupType: populatedConversation.groupType,
+      groupAdmin: populatedConversation.groupAdmin ? {
+        id: String((populatedConversation.groupAdmin as any)._id),
+        username: (populatedConversation.groupAdmin as any).username,
+        avatar: (populatedConversation.groupAdmin as any).avatar,
+      } : undefined,
+      groupAdmins: populatedConversation.groupAdmins?.map((admin: any) => ({
+        id: String(admin._id),
+        username: admin.username,
+        avatar: admin.avatar,
+      })) || [],
+      groupSettings: populatedConversation.groupSettings,
+      lastMessage: populatedConversation.lastMessage,
+      lastMessageAt: populatedConversation.lastMessageAt,
+      unreadCount,
+      createdAt: populatedConversation.createdAt,
+      updatedAt: populatedConversation.updatedAt,
+    };
+  }
+
   static async promoteToAdmin(
     conversationId: string,
     currentAdminId: string,
@@ -548,7 +664,7 @@ export class ConversationService {
     const newAdmin = conversation.participants.find((p: any) => p === newAdminId || p._id === newAdminId);
     const newAdminName = typeof newAdmin === 'string' ? 'A member' : newAdmin;
     
-    await this.createSystemMessage(
+    const systemMessage = await this.createSystemMessage(
       conversationId,
       'admin-promoted',
       `${typeof newAdminName === 'string' ? newAdminName : 'A member'} was promoted to admin`,
@@ -567,31 +683,34 @@ export class ConversationService {
 
     const unreadCount = populatedConversation.unreadCount.get(currentAdminId) || 0;
     return {
-      id: String(populatedConversation._id),
-      type: populatedConversation.type,
-      participants: populatedConversation.participants.map((p: any) => ({
-        id: String(p._id),
-        username: p.username,
-        avatar: p.avatar,
-        isOnline: p.isOnline,
-        lastSeen: p.lastSeen,
-      })),
-      groupName: populatedConversation.groupName,
-      groupAdmin: populatedConversation.groupAdmin ? {
-        id: String((populatedConversation.groupAdmin as any)._id),
-        username: (populatedConversation.groupAdmin as any).username,
-        avatar: (populatedConversation.groupAdmin as any).avatar,
-      } : undefined,
-      groupAdmins: populatedConversation.groupAdmins?.map((admin: any) => ({
-        id: String(admin._id),
-        username: admin.username,
-        avatar: admin.avatar,
-      })) || [],
-      lastMessage: populatedConversation.lastMessage,
-      lastMessageAt: populatedConversation.lastMessageAt,
-      unreadCount,
-      createdAt: populatedConversation.createdAt,
-      updatedAt: populatedConversation.updatedAt,
+      conversation: {
+        id: String(populatedConversation._id),
+        type: populatedConversation.type,
+        participants: populatedConversation.participants.map((p: any) => ({
+          id: String(p._id),
+          username: p.username,
+          avatar: p.avatar,
+          isOnline: p.isOnline,
+          lastSeen: p.lastSeen,
+        })),
+        groupName: populatedConversation.groupName,
+        groupAdmin: populatedConversation.groupAdmin ? {
+          id: String((populatedConversation.groupAdmin as any)._id),
+          username: (populatedConversation.groupAdmin as any).username,
+          avatar: (populatedConversation.groupAdmin as any).avatar,
+        } : undefined,
+        groupAdmins: populatedConversation.groupAdmins?.map((admin: any) => ({
+          id: String(admin._id),
+          username: admin.username,
+          avatar: admin.avatar,
+        })) || [],
+        lastMessage: populatedConversation.lastMessage,
+        lastMessageAt: populatedConversation.lastMessageAt,
+        unreadCount,
+        createdAt: populatedConversation.createdAt,
+        updatedAt: populatedConversation.updatedAt,
+      },
+      systemMessage,
     };
   }
 
@@ -724,11 +843,12 @@ export class ConversationService {
 
     // Add user to conversation
     conversation.participants.push(userId);
+    conversation.memberJoinDates.set(userId, new Date()); // Set join date for privacy
     conversation.lastMessageAt = new Date();
     await conversation.save();
 
     // Create system message
-    await this.createSystemMessage(
+    const systemMessage = await this.createSystemMessage(
       (conversation._id as any).toString(),
       'member-added',
       `A member joined the group`,
@@ -748,6 +868,7 @@ export class ConversationService {
     return {
       conversation: this.formatConversation(populatedConversation!, userId),
       invitation,
+      systemMessage,
     };
   }
 
@@ -870,11 +991,12 @@ export class ConversationService {
 
     // Add user
     conversation.participants.push(userId);
+    conversation.memberJoinDates.set(userId, new Date()); // Set join date for privacy
     conversation.lastMessageAt = new Date();
     await conversation.save();
 
     // Create system message
-    await this.createSystemMessage(
+    const systemMessage = await this.createSystemMessage(
       conversationId,
       'member-added',
       `A member joined the group`,
@@ -887,7 +1009,10 @@ export class ConversationService {
       .populate('groupAdmin', 'username avatar')
       .populate('groupAdmins', 'username avatar');
 
-    return this.formatConversation(populatedConversation!, userId);
+    return {
+      conversation: this.formatConversation(populatedConversation!, userId),
+      systemMessage,
+    };
   }
 
   // Helper to format conversation consistently

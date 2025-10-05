@@ -41,7 +41,7 @@ export class ConversationController {
       }
 
       const { groupName, participants, groupDescription, groupType, settings } = req.body;
-      const conversation = await ConversationService.createGroupConversation(
+      const result = await ConversationService.createGroupConversation(
         req.user.userId,
         groupName,
         participants,
@@ -58,13 +58,19 @@ export class ConversationController {
       if (io) {
         const chatNamespace = io.of('/chat');
         
+        // Emit system message to all members (including creator)
+        if (result.systemMessage) {
+          chatNamespace.to(`conversation:${result.conversation.id}`).emit('new-message', result.systemMessage);
+          console.log(`📨 Emitted system message for group creation to conversation: ${result.conversation.id}`);
+        }
+        
         // Notify each participant (except the creator) about the new group
-        conversation.participants.forEach((participant: any) => {
+        result.conversation.participants.forEach((participant: any) => {
           const participantId = String(participant.id);
           if (participantId !== currentUserId) {
             const socketId = onlineUsers[participantId];
             if (socketId) {
-              chatNamespace.to(socketId).emit('group-created', conversation);
+              chatNamespace.to(socketId).emit('group-created', result.conversation);
             }
           }
         });
@@ -72,7 +78,7 @@ export class ConversationController {
 
       res.status(201).json({
         success: true,
-        data: conversation,
+        data: result.conversation,
       });
     } catch (error) {
       next(error);
@@ -178,15 +184,20 @@ export class ConversationController {
       const { conversationId } = req.params;
       const userId = req.user.userId;
 
-      // Remove user from database
-      await ConversationService.leaveGroup(conversationId, userId);
+      // Remove user from database and get system message
+      const result = await ConversationService.leaveGroup(conversationId, userId);
 
       console.log(`📡 User ${userId} left group ${conversationId}, broadcasting to others`);
+      console.log(`📨 System message created:`, result.systemMessage);
 
       const io = getSocketInstance();
       if (io) {
         const chatNamespace = io.of('/chat');
         const roomName = `conversation:${conversationId}`;
+        
+        // Check how many sockets are in the room BEFORE removing the leaving user
+        const roomSockets = await chatNamespace.in(roomName).fetchSockets();
+        console.log(`👥 Room ${roomName} has ${roomSockets.length} socket(s) BEFORE removal`);
         
         // IMPORTANT: First, make ALL of the leaving user's sockets leave the room
         // (they might have multiple tabs/devices open)
@@ -200,6 +211,19 @@ export class ConversationController {
         });
         
         console.log(`🚪 Removed ${removedSocketsCount} socket(s) for user ${userId} from room ${roomName}`);
+        
+        // Check how many sockets remain AFTER removal
+        const remainingSockets = await chatNamespace.in(roomName).fetchSockets();
+        console.log(`👥 Room ${roomName} has ${remainingSockets.length} socket(s) AFTER removal`);
+        
+        // Emit the system message to remaining members in real-time
+        if (result.systemMessage) {
+          chatNamespace.to(roomName).emit('new-message', result.systemMessage);
+          console.log(`📨 Emitted system message to remaining members in room: ${roomName}`);
+          console.log(`📨 Message content:`, JSON.stringify(result.systemMessage, null, 2));
+        } else {
+          console.log(`⚠️ WARNING: No system message to emit!`);
+        }
         
         // Now emit refresh signal to remaining members ONLY
         chatNamespace.to(roomName).emit('conversation-refresh', { 
@@ -291,7 +315,7 @@ export class ConversationController {
     }
   }
 
-  static async promoteToAdmin(req: AuthRequest, res: Response, next: NextFunction) {
+  static async updateGroupDetails(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       if (!req.user) {
         res.status(401).json({ error: 'Unauthorized' });
@@ -299,17 +323,22 @@ export class ConversationController {
       }
 
       const { conversationId } = req.params;
-      const { newAdminId } = req.body;
+      const { groupName, groupDescription } = req.body;
 
-      if (!newAdminId) {
-        res.status(400).json({ error: 'New admin ID is required' });
+      // Validate that at least one field is provided
+      if (groupName === undefined && groupDescription === undefined) {
+        res.status(400).json({ error: 'At least one field (groupName or groupDescription) must be provided' });
         return;
       }
 
-      const conversation = await ConversationService.promoteToAdmin(
+      const updates: { groupName?: string; groupDescription?: string } = {};
+      if (groupName !== undefined) updates.groupName = groupName;
+      if (groupDescription !== undefined) updates.groupDescription = groupDescription;
+
+      const conversation = await ConversationService.updateGroupDetails(
         conversationId,
         req.user.userId,
-        newAdminId
+        updates
       );
 
       // Notify all participants via socket
@@ -331,6 +360,59 @@ export class ConversationController {
       res.status(200).json({
         success: true,
         data: conversation,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async promoteToAdmin(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      if (!req.user) {
+        res.status(401).json({ error: 'Unauthorized' });
+        return;
+      }
+
+      const { conversationId } = req.params;
+      const { newAdminId } = req.body;
+
+      if (!newAdminId) {
+        res.status(400).json({ error: 'New admin ID is required' });
+        return;
+      }
+
+      const result = await ConversationService.promoteToAdmin(
+        conversationId,
+        req.user.userId,
+        newAdminId
+      );
+
+      // Notify all participants via socket
+      const io = getSocketInstance();
+      const onlineUsers = getOnlineUsers();
+      
+      if (io) {
+        const chatNamespace = io.of('/chat');
+        
+        // Emit system message to all members
+        if (result.systemMessage) {
+          chatNamespace.to(`conversation:${conversationId}`).emit('new-message', result.systemMessage);
+          console.log(`📨 Emitted system message for admin promotion to conversation: ${conversationId}`);
+        }
+        
+        // Also emit group-updated for UI updates
+        result.conversation.participants.forEach((participant: any) => {
+          const participantId = String(participant.id);
+          const socketId = onlineUsers[participantId];
+          if (socketId) {
+            chatNamespace.to(socketId).emit('group-updated', result.conversation);
+          }
+        });
+      }
+
+      res.status(200).json({
+        success: true,
+        data: result.conversation,
       });
     } catch (error) {
       next(error);
@@ -389,24 +471,32 @@ export class ConversationController {
       }
 
       const { conversationId } = req.params;
-      const conversation = await ConversationService.joinPublicGroup(
+      const result = await ConversationService.joinPublicGroup(
         conversationId,
         req.user.userId
       );
 
-      // Notify existing members
+      // Notify existing members with system message in real-time
       const io = getSocketInstance();
       if (io) {
         const chatNamespace = io.of('/chat');
+        
+        // Emit system message to all members (including the new member)
+        if (result.systemMessage) {
+          chatNamespace.to(`conversation:${conversationId}`).emit('new-message', result.systemMessage);
+          console.log(`📨 Emitted system message for member join to conversation: ${conversationId}`);
+        }
+        
+        // Also emit member-joined event for additional UI updates
         chatNamespace.to(`conversation:${conversationId}`).emit('member-joined', {
           conversationId,
-          member: conversation.participants.find((p: any) => p.id === req.user!.userId),
+          member: result.conversation.participants.find((p: any) => p.id === req.user!.userId),
         });
       }
 
       res.status(200).json({
         success: true,
-        data: conversation,
+        data: result.conversation,
       });
     } catch (error) {
       next(error);

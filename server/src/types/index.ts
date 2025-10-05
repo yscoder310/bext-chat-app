@@ -44,6 +44,7 @@ export interface IConversation {
   lastMessage?: string;
   lastMessageAt?: Date;
   unreadCount: Map<string, number>;
+  memberJoinDates: Map<string, Date>; // Track when each member joined (for privacy)
   createdAt: Date;
   updatedAt: Date;
 }
