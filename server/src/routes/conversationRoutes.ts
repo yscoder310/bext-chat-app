@@ -15,7 +15,13 @@ router.get('/:conversationId', ConversationController.getConversationById);
 router.put('/:conversationId/name', ConversationController.updateGroupName);
 router.put('/:conversationId/admin', ConversationController.promoteToAdmin);
 router.post('/:conversationId/participants', ConversationController.addParticipant);
+router.post('/:conversationId/leave', ConversationController.leaveGroup);
 router.delete('/:conversationId/participants/:participantId', ConversationController.removeParticipant);
 router.delete('/:conversationId', ConversationController.deleteConversation);
+
+// NEW ROUTES FOR INVITATION SYSTEM
+router.get('/invitations/pending', ConversationController.getPendingInvitations);
+router.get('/public/discover', ConversationController.getPublicGroups);
+router.post('/:conversationId/join', ConversationController.joinPublicGroup);
 
 export default router;

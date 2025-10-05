@@ -11,24 +11,38 @@ import {
   ActionIcon,
   Loader,
   Menu,
+  Indicator,
 } from '@mantine/core';
-import { IconSearch, IconPlus, IconUsers, IconUser } from '@tabler/icons-react';
+import { IconSearch, IconPlus, IconUsers, IconUser, IconMail, IconWorld } from '@tabler/icons-react';
 import { format, isToday, isYesterday, differenceInMinutes, differenceInDays } from 'date-fns';
 import { useChat } from '../hooks/useChat';
 import { useChatRequests } from '../hooks/useChatRequests';
 import { useDisclosure } from '@mantine/hooks';
+import { useQuery } from '@tanstack/react-query';
 import { UserListModal } from './UserListModal';
 import { CreateGroupModal } from './CreateGroupModal';
+import { InvitationNotification } from './InvitationNotification';
+import { PublicGroupsDiscovery } from './PublicGroupsDiscovery';
 import { useAppSelector } from '../store/hooks';
+import { conversationApi } from '../api/conversations';
 
 export const ConversationList = () => {
   const [search, setSearch] = useState('');
   const [userListOpened, { open: openUserList, close: closeUserList }] = useDisclosure(false);
   const [groupModalOpened, { open: openGroupModal, close: closeGroupModal }] = useDisclosure(false);
+  const [invitationsOpened, { open: openInvitations, close: closeInvitations }] = useDisclosure(false);
+  const [publicGroupsOpened, { open: openPublicGroups, close: closePublicGroups }] = useDisclosure(false);
   const { conversations, selectConversation, activeConversation, isLoadingConversations, createGroup } =
     useChat();
   const { pendingRequests } = useChatRequests();
   const { typingUsers } = useAppSelector((state) => state.chat);
+
+  // Get pending invitations count
+  const { data: invitations = [] } = useQuery({
+    queryKey: ['invitations', 'pending'],
+    queryFn: conversationApi.getPendingInvitations,
+    refetchInterval: 30000, // Refetch every 30 seconds
+  });
 
   const filteredConversations = conversations.filter((conv) => {
     const searchLower = search.toLowerCase();
@@ -180,6 +194,23 @@ export const ConversationList = () => {
               <Menu.Item leftSection={<IconUsers size={16} />} onClick={openGroupModal}>
                 New Group
               </Menu.Item>
+              <Menu.Divider />
+              <Menu.Item leftSection={<IconWorld size={16} />} onClick={openPublicGroups}>
+                Discover Public Groups
+              </Menu.Item>
+              <Menu.Item 
+                leftSection={<IconMail size={16} />} 
+                onClick={openInvitations}
+                rightSection={
+                  invitations.length > 0 && (
+                    <Badge size="xs" color="red" circle>
+                      {invitations.length}
+                    </Badge>
+                  )
+                }
+              >
+                Group Invitations
+              </Menu.Item>
             </Menu.Dropdown>
           </Menu>
         </Group>
@@ -297,9 +328,19 @@ export const ConversationList = () => {
       <CreateGroupModal
         opened={groupModalOpened}
         onClose={closeGroupModal}
-        onCreateGroup={(groupName, participants) => {
-          createGroup({ groupName, participants });
+        onCreateGroup={(groupData) => {
+          createGroup(groupData);
         }}
+      />
+
+      <InvitationNotification
+        opened={invitationsOpened}
+        onClose={closeInvitations}
+      />
+
+      <PublicGroupsDiscovery
+        opened={publicGroupsOpened}
+        onClose={closePublicGroups}
       />
     </>
   );

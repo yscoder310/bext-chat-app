@@ -1,18 +1,23 @@
-import { Modal, Stack, TextInput, ScrollArea, Group, Avatar, Text, Button, Checkbox } from '@mantine/core';
+import { Modal, Stack, TextInput, ScrollArea, Group, Avatar, Text, Button, Checkbox, Textarea, Switch, NumberInput } from '@mantine/core';
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { authApi } from '../api/auth';
 import { useAppSelector } from '../store/hooks';
 import { notifications } from '@mantine/notifications';
+import { CreateGroupInput } from '../types';
 
 interface CreateGroupModalProps {
   opened: boolean;
   onClose: () => void;
-  onCreateGroup: (groupName: string, participants: string[]) => void;
+  onCreateGroup: (groupData: CreateGroupInput) => void;
 }
 
 export const CreateGroupModal = ({ opened, onClose, onCreateGroup }: CreateGroupModalProps) => {
   const [groupName, setGroupName] = useState('');
+  const [groupDescription, setGroupDescription] = useState('');
+  const [isPublic, setIsPublic] = useState(false);
+  const [maxMembers, setMaxMembers] = useState(500);
+  const [allowMemberInvites, setAllowMemberInvites] = useState(false);
   const [search, setSearch] = useState('');
   const [selectedUsers, setSelectedUsers] = useState<Set<string>>(new Set());
   const { user: currentUser } = useAppSelector((state) => state.auth);
@@ -61,10 +66,26 @@ export const CreateGroupModal = ({ opened, onClose, onCreateGroup }: CreateGroup
       return;
     }
 
-    onCreateGroup(groupName.trim(), Array.from(selectedUsers));
+    const groupData: CreateGroupInput = {
+      groupName: groupName.trim(),
+      groupDescription: groupDescription.trim() || undefined,
+      groupType: isPublic ? 'public' : 'private',
+      participants: Array.from(selectedUsers),
+      settings: {
+        maxMembers,
+        allowMemberInvites,
+        isArchived: false,
+      },
+    };
+
+    onCreateGroup(groupData);
     
     // Reset form
     setGroupName('');
+    setGroupDescription('');
+    setIsPublic(false);
+    setMaxMembers(500);
+    setAllowMemberInvites(false);
     setSearch('');
     setSelectedUsers(new Set());
     onClose();
@@ -72,13 +93,17 @@ export const CreateGroupModal = ({ opened, onClose, onCreateGroup }: CreateGroup
 
   const handleClose = () => {
     setGroupName('');
+    setGroupDescription('');
+    setIsPublic(false);
+    setMaxMembers(500);
+    setAllowMemberInvites(false);
     setSearch('');
     setSelectedUsers(new Set());
     onClose();
   };
 
   return (
-    <Modal opened={opened} onClose={handleClose} title="Create Group Chat" size="md">
+    <Modal opened={opened} onClose={handleClose} title="Create Group Chat" size="lg">
       <Stack>
         <TextInput
           label="Group Name"
@@ -86,6 +111,40 @@ export const CreateGroupModal = ({ opened, onClose, onCreateGroup }: CreateGroup
           value={groupName}
           onChange={(e) => setGroupName(e.target.value)}
           required
+        />
+
+        <Textarea
+          label="Group Description"
+          placeholder="What's this group about? (optional)"
+          value={groupDescription}
+          onChange={(e) => setGroupDescription(e.target.value)}
+          minRows={2}
+          maxRows={4}
+          maxLength={500}
+        />
+
+        <Group grow>
+          <Switch
+            label="Public Group"
+            description="Anyone can discover and join"
+            checked={isPublic}
+            onChange={(e) => setIsPublic(e.currentTarget.checked)}
+          />
+          <Switch
+            label="Allow Member Invites"
+            description="Let members invite others"
+            checked={allowMemberInvites}
+            onChange={(e) => setAllowMemberInvites(e.currentTarget.checked)}
+          />
+        </Group>
+
+        <NumberInput
+          label="Maximum Members"
+          description="Set the group capacity"
+          value={maxMembers}
+          onChange={(value) => setMaxMembers(Number(value) || 500)}
+          min={2}
+          max={1000}
         />
 
         <div>

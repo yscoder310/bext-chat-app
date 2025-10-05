@@ -3,6 +3,32 @@ import Message from '../models/Message';
 import { AppError } from '../middleware/errorHandler';
 
 export class ConversationService {
+  // Helper to create system messages
+  private static async createSystemMessage(
+    conversationId: string,
+    systemMessageType: 'member-added' | 'member-removed' | 'admin-promoted' | 'member-left' | 'group-created',
+    content: string,
+    metadata?: Record<string, string>
+  ) {
+    const message = await Message.create({
+      conversationId,
+      messageType: 'system',
+      systemMessageType,
+      content,
+      metadata: metadata ? new Map(Object.entries(metadata)) : undefined,
+      isRead: false,
+      readBy: [],
+    });
+
+    // Update conversation's last message
+    await Conversation.findByIdAndUpdate(conversationId, {
+      lastMessage: message._id,
+      lastMessageAt: new Date(),
+    });
+
+    return message;
+  }
+
   static async createOneToOneConversation(userId: string, otherUserId: string) {
     // Check if conversation already exists
     const existingConversation = await Conversation.findOne({
@@ -73,7 +99,13 @@ export class ConversationService {
   static async createGroupConversation(
     adminId: string,
     groupName: string,
-    participants: string[]
+    participants: string[],
+    groupDescription?: string,
+    groupType: 'private' | 'public' = 'private',
+    settings?: {
+      maxMembers?: number;
+      allowMemberInvites?: boolean;
+    }
   ) {
     // Ensure admin is in participants
     if (!participants.includes(adminId)) {
@@ -84,9 +116,16 @@ export class ConversationService {
     const conversation = await Conversation.create({
       type: 'group',
       groupName,
+      groupDescription,
+      groupType,
       groupAdmin: adminId, // Keep for backward compatibility
       groupAdmins: [adminId],
       participants,
+      groupSettings: {
+        maxMembers: settings?.maxMembers || 500,
+        allowMemberInvites: settings?.allowMemberInvites || false,
+        isArchived: false,
+      },
     });
 
     // Populate and format the response
@@ -211,7 +250,8 @@ export class ConversationService {
     adminId: string,
     newParticipantId: string
   ) {
-    const conversation = await Conversation.findById(conversationId);
+    const conversation = await Conversation.findById(conversationId)
+      .populate('participants', 'username');
 
     if (!conversation) {
       throw new AppError('Conversation not found', 404);
@@ -221,8 +261,12 @@ export class ConversationService {
       throw new AppError('Only group conversations can add participants', 400);
     }
 
-    if (conversation.groupAdmin !== adminId) {
-      throw new AppError('Only group admin can add participants', 403);
+    // Check if current user is an admin
+    const isAdmin = conversation.groupAdmins?.includes(adminId) || 
+                    String(conversation.groupAdmin) === adminId;
+    
+    if (!isAdmin) {
+      throw new AppError('Only admins can add participants', 403);
     }
 
     if (conversation.participants.includes(newParticipantId)) {
@@ -233,6 +277,19 @@ export class ConversationService {
     conversation.unreadCount.set(newParticipantId, 0);
     await conversation.save();
 
+    // Get the new participant's name for system message
+    const populatedConv = await Conversation.findById(conversationId)
+      .populate('participants', 'username');
+    const newMember = (populatedConv?.participants as any[]).find((p: any) => p._id.toString() === newParticipantId);
+    
+    // Create system message
+    await this.createSystemMessage(
+      conversationId,
+      'member-added',
+      `${newMember?.username || 'A new member'} was added to the group`,
+      { userId: newParticipantId }
+    );
+
     return conversation;
   }
 
@@ -241,7 +298,8 @@ export class ConversationService {
     adminId: string,
     participantId: string
   ) {
-    const conversation = await Conversation.findById(conversationId);
+    const conversation = await Conversation.findById(conversationId)
+      .populate('participants', 'username');
 
     if (!conversation) {
       throw new AppError('Conversation not found', 404);
@@ -251,21 +309,85 @@ export class ConversationService {
       throw new AppError('Only group conversations can remove participants', 400);
     }
 
-    if (conversation.groupAdmin !== adminId) {
-      throw new AppError('Only group admin can remove participants', 403);
+    // Check if current user is an admin
+    const isAdmin = conversation.groupAdmins?.includes(adminId) || 
+                    String(conversation.groupAdmin) === adminId;
+    
+    if (!isAdmin) {
+      throw new AppError('Only admins can remove participants', 403);
     }
 
     if (participantId === adminId) {
-      throw new AppError('Admin cannot remove themselves', 400);
+      throw new AppError('Admin cannot remove themselves. Use leave group instead.', 400);
     }
 
+    const removedMember = (conversation.participants as any[]).find((p: any) => 
+      (p._id || p).toString() === participantId
+    );
+
     conversation.participants = conversation.participants.filter(
-      (p) => p !== participantId
+      (p) => p !== participantId && (p as any)._id?.toString() !== participantId
     );
     conversation.unreadCount.delete(participantId);
     await conversation.save();
 
+    // Create system message
+    await this.createSystemMessage(
+      conversationId,
+      'member-removed',
+      `${removedMember?.username || 'A member'} was removed from the group`,
+      { userId: participantId }
+    );
+
     return conversation;
+  }
+
+  static async leaveGroup(conversationId: string, userId: string) {
+    const conversation = await Conversation.findById(conversationId)
+      .populate('participants', 'username');
+
+    if (!conversation) {
+      throw new AppError('Conversation not found', 404);
+    }
+
+    if (conversation.type !== 'group') {
+      throw new AppError('Only group conversations can be left', 400);
+    }
+
+    // Check if user is a member (participants are populated as objects)
+    const isMember = (conversation.participants as any[]).some((p: any) => 
+      (p._id || p).toString() === userId
+    );
+
+    if (!isMember) {
+      throw new AppError('You are not a member of this group', 400);
+    }
+
+    const leavingMember = (conversation.participants as any[]).find((p: any) => 
+      (p._id || p).toString() === userId
+    );
+
+    conversation.participants = conversation.participants.filter(
+      (p) => p !== userId && (p as any)._id?.toString() !== userId
+    );
+    conversation.unreadCount.delete(userId);
+    
+    // Remove from admins if they are an admin
+    if (conversation.groupAdmins) {
+      conversation.groupAdmins = conversation.groupAdmins.filter(adminId => adminId !== userId);
+    }
+    
+    await conversation.save();
+
+    // Create system message
+    await this.createSystemMessage(
+      conversationId,
+      'member-left',
+      `${leavingMember?.username || 'A member'} left the group`,
+      { userId }
+    );
+
+    return { success: true };
   }
 
   static async deleteConversation(conversationId: string, userId: string) {
@@ -399,6 +521,17 @@ export class ConversationService {
     
     await conversation.save();
 
+    // Create system message
+    const newAdmin = conversation.participants.find((p: any) => p === newAdminId || p._id === newAdminId);
+    const newAdminName = typeof newAdmin === 'string' ? 'A member' : newAdmin;
+    
+    await this.createSystemMessage(
+      conversationId,
+      'admin-promoted',
+      `${typeof newAdminName === 'string' ? newAdminName : 'A member'} was promoted to admin`,
+      { userId: newAdminId }
+    );
+
     // Return formatted conversation
     const populatedConversation = await Conversation.findById(conversationId)
       .populate('participants', 'username avatar isOnline lastSeen')
@@ -436,6 +569,342 @@ export class ConversationService {
       unreadCount,
       createdAt: populatedConversation.createdAt,
       updatedAt: populatedConversation.updatedAt,
+    };
+  }
+
+  // NEW METHODS FOR INVITATION SYSTEM
+
+  // Invite users to group
+  static async inviteToGroup(
+    conversationId: string,
+    inviterId: string,
+    userIds: string[]
+  ) {
+    const Invitation = (await import('../models/Invitation')).default;
+    
+    const conversation = await Conversation.findById(conversationId);
+
+    if (!conversation) {
+      throw new AppError('Group not found', 404);
+    }
+
+    if (conversation.type !== 'group') {
+      throw new AppError('Can only invite to group conversations', 400);
+    }
+
+    // Check if inviter is authorized
+    const isInviterMember = conversation.participants.includes(inviterId);
+    if (!isInviterMember) {
+      throw new AppError('You are not a member of this group', 403);
+    }
+
+    const isInviterAdmin = conversation.groupAdmins?.includes(inviterId) || conversation.groupAdmin === inviterId;
+    const allowMemberInvites = conversation.groupSettings?.allowMemberInvites || false;
+
+    if (!isInviterAdmin && !allowMemberInvites) {
+      throw new AppError('You are not authorized to invite members', 403);
+    }
+
+    // Filter out already invited/member users
+    const validUserIds = userIds.filter((userId) => {
+      return !conversation.participants.includes(userId);
+    });
+
+    if (validUserIds.length === 0) {
+      throw new AppError('All users are already members', 400);
+    }
+
+    // Check group capacity
+    const maxMembers = conversation.groupSettings?.maxMembers || 500;
+    const newMemberCount = conversation.participants.length + validUserIds.length;
+    if (newMemberCount > maxMembers) {
+      throw new AppError(`Group capacity exceeded. Max members: ${maxMembers}`, 400);
+    }
+
+    // Create invitations
+    const invitations = await Promise.all(
+      validUserIds.map(async (userId) => {
+        // Check for existing pending invitation
+        const existingInvitation = await Invitation.findOne({
+          conversationId,
+          invitedUser: userId,
+          status: 'pending',
+        });
+
+        if (existingInvitation) {
+          return existingInvitation;
+        }
+
+        const invitation = await Invitation.create({
+          conversationId,
+          invitedBy: inviterId,
+          invitedUser: userId,
+          status: 'pending',
+        });
+
+        return invitation;
+      })
+    );
+
+    // Populate invitation data
+    await Invitation.populate(invitations, [
+      { path: 'conversationId', select: 'groupName groupDescription groupType type' },
+      { path: 'invitedBy', select: 'username avatar' },
+      { path: 'invitedUser', select: 'username avatar' },
+    ]);
+
+    return invitations;
+  }
+
+  // Accept invitation
+  static async acceptInvitation(invitationId: string, userId: string) {
+    const Invitation = (await import('../models/Invitation')).default;
+    
+    const invitation = await Invitation.findById(invitationId)
+      .populate('conversationId')
+      .populate('invitedBy', 'username avatar');
+
+    if (!invitation) {
+      throw new AppError('Invitation not found', 404);
+    }
+
+    if (invitation.invitedUser.toString() !== userId) {
+      throw new AppError('This invitation is not for you', 403);
+    }
+
+    if (invitation.status !== 'pending') {
+      throw new AppError('This invitation is no longer valid', 400);
+    }
+
+    if (invitation.expiresAt < new Date()) {
+      invitation.status = 'expired';
+      await invitation.save();
+      throw new AppError('This invitation has expired', 400);
+    }
+
+    const conversation = await Conversation.findById(invitation.conversationId);
+
+    if (!conversation) {
+      throw new AppError('Group not found', 404);
+    }
+
+    // Check if already a member
+    if (conversation.participants.includes(userId)) {
+      throw new AppError('You are already a member of this group', 400);
+    }
+
+    // Check capacity
+    const maxMembers = conversation.groupSettings?.maxMembers || 500;
+    if (conversation.participants.length >= maxMembers) {
+      throw new AppError('Group is at maximum capacity', 400);
+    }
+
+    // Add user to conversation
+    conversation.participants.push(userId);
+    conversation.lastMessageAt = new Date();
+    await conversation.save();
+
+    // Create system message
+    await this.createSystemMessage(
+      (conversation._id as any).toString(),
+      'member-added',
+      `A member joined the group`,
+      { userId }
+    );
+
+    // Update invitation status
+    invitation.status = 'accepted';
+    await invitation.save();
+
+    // Populate conversation data
+    const populatedConversation = await Conversation.findById(conversation._id)
+      .populate('participants', 'username avatar isOnline lastSeen')
+      .populate('groupAdmin', 'username avatar')
+      .populate('groupAdmins', 'username avatar');
+
+    return {
+      conversation: this.formatConversation(populatedConversation!, userId),
+      invitation,
+    };
+  }
+
+  // Decline invitation
+  static async declineInvitation(invitationId: string, userId: string) {
+    const Invitation = (await import('../models/Invitation')).default;
+    
+    const invitation = await Invitation.findById(invitationId);
+
+    if (!invitation) {
+      throw new AppError('Invitation not found', 404);
+    }
+
+    if (invitation.invitedUser.toString() !== userId) {
+      throw new AppError('This invitation is not for you', 403);
+    }
+
+    if (invitation.status !== 'pending') {
+      throw new AppError('This invitation is no longer valid', 400);
+    }
+
+    invitation.status = 'rejected';
+    await invitation.save();
+
+    return invitation;
+  }
+
+  // Get user's pending invitations
+  static async getPendingInvitations(userId: string) {
+    const Invitation = (await import('../models/Invitation')).default;
+    
+    const invitations = await Invitation.find({
+      invitedUser: userId,
+      status: 'pending',
+      expiresAt: { $gt: new Date() },
+    })
+      .sort({ createdAt: -1 })
+      .populate('conversationId', 'groupName groupDescription groupType type')
+      .populate('invitedBy', 'username avatar');
+
+    return invitations;
+  }
+
+  // Get public groups for discovery
+  static async getPublicGroups(
+    userId: string,
+    search?: string,
+    page: number = 1,
+    limit: number = 20
+  ) {
+    const query: any = {
+      type: 'group',
+      groupType: 'public',
+      participants: { $ne: userId }, // Exclude groups user is already in
+      'groupSettings.isArchived': { $ne: true },
+    };
+
+    if (search) {
+      query.$or = [
+        { groupName: { $regex: search, $options: 'i' } },
+        { groupDescription: { $regex: search, $options: 'i' } },
+      ];
+    }
+
+    const conversations = await Conversation.find(query)
+      .sort({ lastMessageAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(limit)
+      .populate('groupAdmin', 'username avatar')
+      .select('groupName groupDescription groupType participants lastMessageAt createdAt');
+
+    const total = await Conversation.countDocuments(query);
+
+    return {
+      groups: conversations.map((conv) => ({
+        id: (conv._id as any).toString(),
+        groupName: conv.groupName,
+        groupDescription: conv.groupDescription,
+        groupType: conv.groupType,
+        memberCount: conv.participants.length,
+        lastMessageAt: conv.lastMessageAt,
+        createdAt: conv.createdAt,
+      })),
+      total,
+      page,
+      pages: Math.ceil(total / limit),
+    };
+  }
+
+  // Join public group
+  static async joinPublicGroup(conversationId: string, userId: string) {
+    const conversation = await Conversation.findById(conversationId);
+
+    if (!conversation) {
+      throw new AppError('Group not found', 404);
+    }
+
+    if (conversation.type !== 'group') {
+      throw new AppError('This is not a group conversation', 400);
+    }
+
+    if (conversation.groupType !== 'public') {
+      throw new AppError('This group is private. You need an invitation to join', 403);
+    }
+
+    if (conversation.groupSettings?.isArchived) {
+      throw new AppError('This group is archived', 400);
+    }
+
+    // Check if already a member
+    if (conversation.participants.includes(userId)) {
+      throw new AppError('You are already a member of this group', 400);
+    }
+
+    // Check capacity
+    const maxMembers = conversation.groupSettings?.maxMembers || 500;
+    if (conversation.participants.length >= maxMembers) {
+      throw new AppError('Group is at maximum capacity', 400);
+    }
+
+    // Add user
+    conversation.participants.push(userId);
+    conversation.lastMessageAt = new Date();
+    await conversation.save();
+
+    // Create system message
+    await this.createSystemMessage(
+      conversationId,
+      'member-added',
+      `A member joined the group`,
+      { userId }
+    );
+
+    // Populate and return
+    const populatedConversation = await Conversation.findById(conversationId)
+      .populate('participants', 'username avatar isOnline lastSeen')
+      .populate('groupAdmin', 'username avatar')
+      .populate('groupAdmins', 'username avatar');
+
+    return this.formatConversation(populatedConversation!, userId);
+  }
+
+  // Helper to format conversation consistently
+  private static formatConversation(conv: any, userId: string) {
+    const unreadCount = conv.unreadCount.get(userId) || 0;
+    
+    let groupAdmins = conv.groupAdmins || [];
+    if (conv.type === 'group' && conv.groupAdmin && groupAdmins.length === 0) {
+      groupAdmins = [conv.groupAdmin];
+    }
+    
+    return {
+      id: String(conv._id),
+      type: conv.type,
+      participants: conv.participants.map((p: any) => ({
+        id: String(p._id),
+        username: p.username,
+        avatar: p.avatar,
+        isOnline: p.isOnline,
+        lastSeen: p.lastSeen,
+      })),
+      groupName: conv.groupName,
+      groupDescription: conv.groupDescription,
+      groupType: conv.groupType,
+      groupAdmin: conv.groupAdmin ? {
+        id: String((conv.groupAdmin as any)._id),
+        username: (conv.groupAdmin as any).username,
+        avatar: (conv.groupAdmin as any).avatar,
+      } : undefined,
+      groupAdmins: groupAdmins.map((admin: any) => ({
+        id: String(admin._id || admin),
+        username: admin.username,
+        avatar: admin.avatar,
+      })),
+      groupSettings: conv.groupSettings,
+      lastMessage: conv.lastMessage,
+      lastMessageAt: conv.lastMessageAt,
+      unreadCount,
+      createdAt: conv.createdAt,
+      updatedAt: conv.updatedAt,
     };
   }
 }

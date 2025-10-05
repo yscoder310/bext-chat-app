@@ -1,5 +1,6 @@
 import { useEffect, useCallback } from 'react';
 import { useAppDispatch, useAppSelector } from '../store/hooks';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   addMessage,
   addTypingUser,
@@ -10,6 +11,8 @@ import {
   markMessagesAsRead,
   addConversation,
   updateConversation,
+  removeConversation,
+  setActiveConversation,
 } from '../store/slices/chatSlice';
 import { socketService } from '../lib/socket';
 import { Message } from '../types';
@@ -17,6 +20,8 @@ import { Message } from '../types';
 export const useSocket = () => {
   const dispatch = useAppDispatch();
   const { token, user } = useAppSelector((state) => state.auth);
+  const { activeConversationId } = useAppSelector((state) => state.chat);
+  const queryClient = useQueryClient();
 
   // Connect to socket when token is available
   useEffect(() => {
@@ -90,14 +95,113 @@ export const useSocket = () => {
       }
     });
 
-    // Group updated (name change or admin promotion)
+    // Group updated (name change, admin promotion, member left)
     socketService.onGroupUpdated((conversation) => {
-      console.log('Group updated, updating conversation:', conversation);
+      console.log('🔄 Group updated event received:', conversation);
+      console.log('Conversation ID:', conversation?.id);
+      console.log('Participants:', conversation?.participants);
+      console.log('Current user ID:', user?.id);
+      
       if (conversation && conversation.id && conversation.participants && Array.isArray(conversation.participants)) {
-        dispatch(updateConversation(conversation));
+        // Check if current user is still in the participants list
+        const isUserInConversation = conversation.participants.some((p: any) => 
+          p.id === user?.id || p._id === user?.id
+        );
+        
+        console.log('Is current user still in conversation?', isUserInConversation);
+        
+        if (isUserInConversation) {
+          // User is still a member - update the conversation
+          console.log('✅ Updating conversation for remaining member');
+          dispatch(updateConversation(conversation));
+        } else {
+          // User is no longer a member - remove the conversation
+          console.log('❌ User removed from conversation, removing from list');
+          dispatch(removeConversation(conversation.id));
+          
+          // Clear active conversation if this was the active one
+          if (activeConversationId === conversation.id) {
+            dispatch(setActiveConversation(null));
+          }
+        }
       } else {
-        console.error('Invalid updated group conversation data received:', conversation);
+        console.error('❌ Invalid updated group conversation data received:', conversation);
       }
+    });
+
+    // Conversation refresh - simpler approach, just refetch conversations
+    socketService.onConversationRefresh((data) => {
+      console.log('='.repeat(60));
+      console.log('🔄 [SOCKET] CONVERSATION-REFRESH EVENT RECEIVED');
+      console.log('🔄 [SOCKET] Data:', data);
+      console.log('🔄 [SOCKET] Current user:', user?.username, user?.id);
+      console.log('🔄 [SOCKET] This user should STAY in the group');
+      console.log('='.repeat(60));
+      
+      // Refetch conversations from server
+      // This will automatically show/hide the conversation based on current user's participation
+      console.log('🔄 [SOCKET] Invalidating conversations query');
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      console.log('='.repeat(60));
+    });
+
+    // Conversation removed - user left the group
+    socketService.onConversationRemoved((data) => {
+      console.log('='.repeat(60));
+      console.log('🗑️ [SOCKET] CONVERSATION-REMOVED EVENT RECEIVED');
+      console.log('🗑️ [SOCKET] Conversation ID:', data.conversationId);
+      console.log('🗑️ [SOCKET] Current user:', user?.username, user?.id);
+      console.log('🗑️ [SOCKET] Active conversation ID:', activeConversationId);
+      console.log('='.repeat(60));
+      
+      // Remove conversation from local state immediately
+      dispatch(removeConversation(data.conversationId));
+      
+      // Clear active conversation if this was the active one
+      if (activeConversationId === data.conversationId) {
+        console.log('🗑️ [SOCKET] Clearing active conversation');
+        dispatch(setActiveConversation(null));
+      }
+      
+      // Also refetch to ensure everything is in sync
+      console.log('🗑️ [SOCKET] Invalidating conversations query');
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      console.log('='.repeat(60));
+    });
+
+    // Invitation system events
+    socketService.onGroupInvitation((invitation) => {
+      console.log('📬 Received group invitation:', invitation);
+      // Show notification
+      // You can add a notification here or update a badge
+      queryClient.invalidateQueries({ queryKey: ['invitations'] });
+    });
+
+    socketService.onInvitationsSent((data) => {
+      console.log('✅ Invitations sent:', data);
+      // Invitations were successfully sent
+    });
+
+    socketService.onInvitationAccepted((conversation) => {
+      console.log('✅ Invitation accepted, joined group:', conversation);
+      if (conversation && conversation.id && conversation.participants && Array.isArray(conversation.participants)) {
+        dispatch(addConversation(conversation));
+        // Refetch conversations to ensure sync
+        queryClient.invalidateQueries({ queryKey: ['conversations'] });
+        queryClient.invalidateQueries({ queryKey: ['invitations'] });
+      }
+    });
+
+    socketService.onInvitationDeclined((data) => {
+      console.log('❌ Invitation declined:', data);
+      queryClient.invalidateQueries({ queryKey: ['invitations'] });
+    });
+
+    socketService.onMemberJoined((data) => {
+      console.log('👤 Member joined group:', data);
+      // Refetch the specific conversation to update member list
+      queryClient.invalidateQueries({ queryKey: ['conversation', data.conversationId] });
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
     });
 
     return () => {
@@ -109,7 +213,7 @@ export const useSocket = () => {
       socketService.offUserOnline();
       socketService.offUserOffline();
     };
-  }, [dispatch]);
+  }, [dispatch, user?.id, queryClient, activeConversationId]); // Added dependencies
 
   // Get online users when socket connects
   useEffect(() => {

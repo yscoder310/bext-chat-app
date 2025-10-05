@@ -23,6 +23,16 @@ const conversationSchema = new Schema<IConversationDocument>(
       trim: true,
       maxlength: [100, 'Group name cannot exceed 100 characters'],
     },
+    groupDescription: {
+      type: String,
+      trim: true,
+      maxlength: [500, 'Group description cannot exceed 500 characters'],
+    },
+    groupType: {
+      type: String,
+      enum: ['private', 'public'],
+      default: 'private',
+    },
     groupAdmins: [
       {
         type: String,
@@ -32,6 +42,22 @@ const conversationSchema = new Schema<IConversationDocument>(
     groupAdmin: {
       type: String,
       ref: 'User',
+    },
+    groupSettings: {
+      maxMembers: {
+        type: Number,
+        default: 500,
+        min: 2,
+        max: 10000,
+      },
+      allowMemberInvites: {
+        type: Boolean,
+        default: false,
+      },
+      isArchived: {
+        type: Boolean,
+        default: false,
+      },
     },
     lastMessage: {
       type: String,

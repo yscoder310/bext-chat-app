@@ -30,11 +30,17 @@ export const useChat = () => {
   const conversationsQuery = useQuery({
     queryKey: ['conversations'],
     queryFn: conversationApi.getUserConversations,
+    staleTime: 0, // Allow refetching when needed
+    refetchOnMount: true, // Refetch when component mounts
   });
 
   // Update Redux when conversations are fetched
   useEffect(() => {
     if (conversationsQuery.data) {
+      console.log('🔄 [USE_CHAT] Conversations data changed, updating Redux');
+      console.log('🔄 [USE_CHAT] New data has', conversationsQuery.data.length, 'conversations');
+      console.log('🔄 [USE_CHAT] User:', user?.username);
+      console.log('🔄 [USE_CHAT] Stack trace:', new Error().stack);
       dispatch(setConversations(conversationsQuery.data));
     }
   }, [conversationsQuery.data, dispatch]);
@@ -227,6 +233,36 @@ export const useChat = () => {
     },
   });
 
+  // Leave group
+  const leaveGroupMutation = useMutation({
+    mutationFn: (conversationId: string) => {
+      console.log('🚪 [LEAVE GROUP] Starting leave group for conversation:', conversationId);
+      return conversationApi.leaveGroup(conversationId);
+    },
+    onSuccess: (_, conversationId) => {
+      console.log('🚪 [LEAVE GROUP] Leave successful for conversation:', conversationId);
+      console.log('🚪 [LEAVE GROUP] Current user:', user?.username);
+      
+      // DON'T manually remove - let the socket event handle it
+      // This ensures all users (including the one leaving) get the same update
+      console.log('🚪 [LEAVE GROUP] Waiting for socket event to update UI');
+      
+      notifications.show({
+        title: 'Success',
+        message: 'You have left the group',
+        color: 'green',
+      });
+    },
+    onError: (error) => {
+      console.error('🚪 [LEAVE GROUP] Error:', error);
+      notifications.show({
+        title: 'Error',
+        message: 'Failed to leave group',
+        color: 'red',
+      });
+    },
+  });
+
   return {
     conversations,
     activeConversation,
@@ -240,6 +276,7 @@ export const useChat = () => {
     deleteConversation: deleteConversationMutation.mutate,
     updateGroupName: updateGroupNameMutation.mutate,
     promoteToAdmin: promoteToAdminMutation.mutate,
+    leaveGroup: leaveGroupMutation.mutate,
     refetchConversations: conversationsQuery.refetch,
     refetchMessages: messagesQuery.refetch,
   };

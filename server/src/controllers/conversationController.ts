@@ -40,11 +40,14 @@ export class ConversationController {
         return;
       }
 
-      const { groupName, participants } = req.body;
+      const { groupName, participants, groupDescription, groupType, settings } = req.body;
       const conversation = await ConversationService.createGroupConversation(
         req.user.userId,
         groupName,
-        participants
+        participants,
+        groupDescription,
+        groupType || 'private',
+        settings
       );
 
       // Notify all participants via socket about the new group
@@ -165,6 +168,64 @@ export class ConversationController {
     }
   }
 
+  static async leaveGroup(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      if (!req.user) {
+        res.status(401).json({ error: 'Unauthorized' });
+        return;
+      }
+
+      const { conversationId } = req.params;
+      const userId = req.user.userId;
+
+      // Remove user from database
+      await ConversationService.leaveGroup(conversationId, userId);
+
+      console.log(`📡 User ${userId} left group ${conversationId}, broadcasting to others`);
+
+      const io = getSocketInstance();
+      if (io) {
+        const chatNamespace = io.of('/chat');
+        const roomName = `conversation:${conversationId}`;
+        
+        // IMPORTANT: First, make ALL of the leaving user's sockets leave the room
+        // (they might have multiple tabs/devices open)
+        let removedSocketsCount = 0;
+        chatNamespace.sockets.forEach((socket: any) => {
+          if (socket.user?.userId === userId) {
+            socket.leave(roomName);
+            removedSocketsCount++;
+            console.log(`🚪 User ${userId} socket ${socket.id} removed from room ${roomName}`);
+          }
+        });
+        
+        console.log(`🚪 Removed ${removedSocketsCount} socket(s) for user ${userId} from room ${roomName}`);
+        
+        // Now emit refresh signal to remaining members ONLY
+        chatNamespace.to(roomName).emit('conversation-refresh', { 
+          conversationId,
+          action: 'member-left',
+          userId // Include who left for logging
+        });
+        
+        console.log(`✅ Emitted conversation-refresh to remaining members in room: ${roomName}`);
+        
+        // Separately notify the leaving user to remove the conversation on ALL their sockets
+        chatNamespace.to(`user:${userId}`).emit('conversation-removed', {
+          conversationId
+        });
+        console.log(`📤 Sent conversation-removed to leaving user: ${userId} (to their personal room)`);
+      }
+
+      res.status(200).json({
+        success: true,
+        message: 'Left group successfully',
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   static async deleteConversation(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       if (!req.user) {
@@ -264,6 +325,82 @@ export class ConversationController {
           if (socketId) {
             chatNamespace.to(socketId).emit('group-updated', conversation);
           }
+        });
+      }
+
+      res.status(200).json({
+        success: true,
+        data: conversation,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // NEW METHODS FOR INVITATION SYSTEM
+
+  static async getPendingInvitations(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      if (!req.user) {
+        res.status(401).json({ error: 'Unauthorized' });
+        return;
+      }
+
+      const invitations = await ConversationService.getPendingInvitations(req.user.userId);
+
+      res.status(200).json({
+        success: true,
+        data: invitations,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async getPublicGroups(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      if (!req.user) {
+        res.status(401).json({ error: 'Unauthorized' });
+        return;
+      }
+
+      const { search, page, limit } = req.query;
+      const groups = await ConversationService.getPublicGroups(
+        req.user.userId,
+        search as string,
+        parseInt(page as string) || 1,
+        parseInt(limit as string) || 20
+      );
+
+      res.status(200).json({
+        success: true,
+        data: groups,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async joinPublicGroup(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      if (!req.user) {
+        res.status(401).json({ error: 'Unauthorized' });
+        return;
+      }
+
+      const { conversationId } = req.params;
+      const conversation = await ConversationService.joinPublicGroup(
+        conversationId,
+        req.user.userId
+      );
+
+      // Notify existing members
+      const io = getSocketInstance();
+      if (io) {
+        const chatNamespace = io.of('/chat');
+        chatNamespace.to(`conversation:${conversationId}`).emit('member-joined', {
+          conversationId,
+          member: conversation.participants.find((p: any) => p.id === req.user!.userId),
         });
       }
 

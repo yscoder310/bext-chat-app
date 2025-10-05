@@ -15,7 +15,9 @@ export interface Message {
   conversationId: string;
   senderId: User | string;
   content: string;
-  messageType: 'text' | 'image' | 'file';
+  messageType: 'text' | 'image' | 'file' | 'system';
+  systemMessageType?: 'member-added' | 'member-removed' | 'admin-promoted' | 'member-left' | 'group-created';
+  metadata?: Record<string, string>;
   isRead: boolean;
   readBy: string[];
   createdAt: Date;
@@ -27,13 +29,42 @@ export interface Conversation {
   type: 'one-to-one' | 'group';
   participants: User[];
   groupName?: string;
+  groupDescription?: string;
+  groupType?: 'private' | 'public';
   groupAdmin?: User;
   groupAdmins?: User[];
+  groupSettings?: GroupSettings;
   lastMessage?: Message;
   lastMessageAt?: Date;
   unreadCount: number;
   createdAt: Date;
   updatedAt: Date;
+}
+
+export interface GroupSettings {
+  maxMembers: number;
+  allowMemberInvites: boolean;
+  isArchived: boolean;
+}
+
+export interface Invitation {
+  _id: string;
+  conversationId: Conversation | string;
+  invitedBy: User;
+  invitedUser: User | string;
+  status: 'pending' | 'accepted' | 'declined';
+  createdAt: Date;
+  expiresAt: Date;
+}
+
+export interface PublicGroup {
+  id: string;
+  groupName: string;
+  groupDescription?: string;
+  groupType: 'public';
+  memberCount: number;
+  lastMessageAt?: Date;
+  createdAt: Date;
 }
 
 export interface ChatRequest {
@@ -86,7 +117,14 @@ export interface MessageInput {
 
 export interface CreateGroupInput {
   groupName: string;
+  groupDescription?: string;
+  groupType?: 'private' | 'public';
   participants: string[];
+  settings?: {
+    maxMembers?: number;
+    allowMemberInvites?: boolean;
+    isArchived?: boolean;
+  };
 }
 
 export interface TypingIndicator {

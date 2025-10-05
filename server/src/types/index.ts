@@ -18,7 +18,9 @@ export interface IMessage {
   conversationId: string;
   senderId: string;
   content: string;
-  messageType: 'text' | 'image' | 'file';
+  messageType: 'text' | 'image' | 'file' | 'system';
+  systemMessageType?: 'member-added' | 'member-removed' | 'admin-promoted' | 'member-left' | 'group-created';
+  metadata?: Map<string, string>;
   isRead: boolean;
   readBy: string[];
   createdAt: Date;
@@ -30,8 +32,15 @@ export interface IConversation {
   type: 'one-to-one' | 'group';
   participants: string[];
   groupName?: string;
+  groupDescription?: string;
+  groupType?: 'private' | 'public';
   groupAdmins?: string[];
   groupAdmin?: string; // Keep for backward compatibility
+  groupSettings?: {
+    maxMembers?: number;
+    allowMemberInvites?: boolean;
+    isArchived?: boolean;
+  };
   lastMessage?: string;
   lastMessageAt?: Date;
   unreadCount: Map<string, number>;

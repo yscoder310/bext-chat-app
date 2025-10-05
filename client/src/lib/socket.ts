@@ -65,9 +65,14 @@ class SocketService {
     }
     this.eventHandlers.get(eventName)!.push(handler);
     
+    console.log(`📝 Registering handler for event: ${eventName}, socket connected: ${!!this.socket}`);
+    
     // Attach to socket if already connected
     if (this.socket) {
+      console.log(`✅ Attaching ${eventName} handler to socket`);
       this.socket.on(eventName, handler);
+    } else {
+      console.warn(`⚠️ Socket not connected yet, ${eventName} handler will be attached on connect`);
     }
   }
 
@@ -137,6 +142,22 @@ class SocketService {
     } else {
       console.warn('⚠️ Cannot get online users - socket not connected');
     }
+  }
+
+  // Invitation System
+  inviteToGroup(conversationId: string, userIds: string[]) {
+    console.log('Inviting users to group:', { conversationId, userIds });
+    this.socket?.emit('invite-to-group', { conversationId, userIds });
+  }
+
+  acceptInvitation(invitationId: string) {
+    console.log('Accepting invitation:', invitationId);
+    this.socket?.emit('accept-invitation', { invitationId });
+  }
+
+  declineInvitation(invitationId: string) {
+    console.log('Declining invitation:', invitationId);
+    this.socket?.emit('decline-invitation', { invitationId });
   }
 
   // Event listeners
@@ -233,7 +254,74 @@ class SocketService {
       console.log('✏️ Group updated:', conversation);
       callback(conversation);
     };
+    console.log('📝 Registering handler for group-updated event');
     this.registerHandler('group-updated', handler);
+  }
+
+  onConversationRefresh(callback: (data: { conversationId: string; action: string }) => void) {
+    const handler = (data: { conversationId: string; action: string }) => {
+      console.log('🔄 Conversation refresh signal received:', data);
+      callback(data);
+    };
+    console.log('📝 Registering handler for conversation-refresh event');
+    this.registerHandler('conversation-refresh', handler);
+  }
+
+  onMemberLeft(callback: (data: { conversationId: string; userId: string }) => void) {
+    const handler = (data: { conversationId: string; userId: string }) => {
+      console.log('👋 Member left group:', data);
+      callback(data);
+    };
+    this.registerHandler('member-left', handler);
+  }
+
+  onConversationRemoved(callback: (data: { conversationId: string }) => void) {
+    const handler = (data: { conversationId: string }) => {
+      console.log('🗑️ Conversation removed (you left):', data);
+      callback(data);
+    };
+    console.log('📝 Registering handler for conversation-removed event');
+    this.registerHandler('conversation-removed', handler);
+  }
+
+  onGroupInvitation(callback: (invitation: any) => void) {
+    const handler = (invitation: any) => {
+      console.log('📬 Received group invitation:', invitation);
+      callback(invitation);
+    };
+    this.registerHandler('group-invitation', handler);
+  }
+
+  onInvitationsSent(callback: (data: { count: number }) => void) {
+    const handler = (data: { count: number }) => {
+      console.log('✅ Invitations sent:', data);
+      callback(data);
+    };
+    this.registerHandler('invitations-sent', handler);
+  }
+
+  onInvitationAccepted(callback: (conversation: any) => void) {
+    const handler = (conversation: any) => {
+      console.log('✅ Invitation accepted, joined group:', conversation);
+      callback(conversation);
+    };
+    this.registerHandler('invitation-accepted', handler);
+  }
+
+  onInvitationDeclined(callback: (data: { invitationId: string }) => void) {
+    const handler = (data: { invitationId: string }) => {
+      console.log('❌ Invitation declined:', data);
+      callback(data);
+    };
+    this.registerHandler('invitation-declined', handler);
+  }
+
+  onMemberJoined(callback: (data: { conversationId: string; member: any }) => void) {
+    const handler = (data: { conversationId: string; member: any }) => {
+      console.log('👤 Member joined group:', data);
+      callback(data);
+    };
+    this.registerHandler('member-joined', handler);
   }
 
   // Remove event listeners

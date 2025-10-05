@@ -26,6 +26,9 @@ const chatSlice = createSlice({
   initialState,
   reducers: {
     setConversations: (state, action: PayloadAction<Conversation[]>) => {
+      console.log('📝 [REDUX] setConversations called with', action.payload.length, 'conversations');
+      console.log('📝 [REDUX] Conversation IDs:', action.payload.map(c => `${c.id} (${c.type === 'group' ? c.groupName : 'DM'})`));
+      
       // Sort conversations by lastMessageAt (most recent first)
       const sortedConversations = [...action.payload].sort((a, b) => {
         const aTime = a.lastMessageAt ? new Date(a.lastMessageAt).getTime() : 0;
@@ -42,6 +45,7 @@ const chatSlice = createSlice({
         })),
       }));
       
+      console.log('📝 [REDUX] setConversations completed. Total conversations:', state.conversations.length);
       state.isLoadingConversations = false;
     },
     addConversation: (state, action: PayloadAction<Conversation>) => {
@@ -51,14 +55,32 @@ const chatSlice = createSlice({
       }
     },
     updateConversation: (state, action: PayloadAction<Partial<Conversation> & { id: string }>) => {
+      console.log('📝 [REDUX] updateConversation called for:', action.payload.id);
+      console.log('📝 [REDUX] Update data:', action.payload);
+      
       const index = state.conversations.findIndex((c) => c.id === action.payload.id);
       if (index !== -1) {
+        console.log('📝 [REDUX] Found conversation at index:', index);
+        console.log('📝 [REDUX] Old participants:', state.conversations[index].participants?.length);
+        console.log('📝 [REDUX] New participants:', action.payload.participants?.length);
+        
         state.conversations[index] = { ...state.conversations[index], ...action.payload };
+        
+        console.log('📝 [REDUX] Updated participants:', state.conversations[index].participants?.length);
+      } else {
+        console.warn('📝 [REDUX] Conversation not found for update:', action.payload.id);
       }
     },
     removeConversation: (state, action: PayloadAction<string>) => {
+      console.log('📝 [REDUX] removeConversation called for:', action.payload);
+      console.log('📝 [REDUX] Conversations before removal:', state.conversations.length);
+      
       state.conversations = state.conversations.filter((c) => c.id !== action.payload);
+      
+      console.log('📝 [REDUX] Conversations after removal:', state.conversations.length);
+      
       if (state.activeConversationId === action.payload) {
+        console.log('📝 [REDUX] Clearing active conversation');
         state.activeConversationId = null;
       }
     },

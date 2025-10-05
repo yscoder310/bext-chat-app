@@ -13,8 +13,11 @@ import {
   Badge,
   Box,
   Tooltip,
+  Menu,
+  Modal,
+  Button,
 } from '@mantine/core';
-import { IconSend, IconMoodSmile, IconPaperclip, IconUsers, IconEdit, IconCheck, IconX } from '@tabler/icons-react';
+import { IconSend, IconMoodSmile, IconPaperclip, IconUsers, IconEdit, IconCheck, IconX, IconDots, IconPlus, IconLogout, IconUserPlus } from '@tabler/icons-react';
 import { 
   format, 
   isToday, 
@@ -26,9 +29,10 @@ import {
   differenceInSeconds
 } from 'date-fns';
 import { useChat } from '../hooks/useChat';
+import { useDisclosure } from '@mantine/hooks';
+import { InviteMembersModal } from './InviteMembersModal';
 import { useSocket } from '../hooks/useSocket';
 import { useAppSelector } from '../store/hooks';
-import { useDisclosure } from '@mantine/hooks';
 import { GroupMembersModal } from './GroupMembersModal';
 
 const EmptyState = () => {
@@ -81,11 +85,13 @@ export const ChatArea = () => {
   const [isEditingGroupName, setIsEditingGroupName] = useState(false);
   const [editedGroupName, setEditedGroupName] = useState('');
   const [membersModalOpened, { open: openMembersModal, close: closeMembersModal }] = useDisclosure(false);
+  const [inviteMembersOpened, { open: openInviteMembers, close: closeInviteMembers }] = useDisclosure(false);
+  const [leaveGroupConfirm, setLeaveGroupConfirm] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<number | null>(null);
   const isTypingRef = useRef(false);
   const lastConversationIdRef = useRef<string | null>(null);
-  const { activeConversation, activeMessages, activeTypingUsers, isLoadingMessages, updateGroupName, promoteToAdmin } = useChat();
+  const { activeConversation, activeMessages, activeTypingUsers, isLoadingMessages, updateGroupName, promoteToAdmin, leaveGroup } = useChat();
   const { sendMessage: socketSendMessage, startTyping, stopTyping } = useSocket();
   const { user } = useAppSelector((state) => state.auth);
 
@@ -582,15 +588,46 @@ export const ChatArea = () => {
           </Group>
 
           {activeConversation.type === 'group' && (
-            <Tooltip label="View members">
-              <ActionIcon 
-                variant="subtle" 
-                size="lg"
-                onClick={openMembersModal}
-              >
-                <IconUsers size={20} />
-              </ActionIcon>
-            </Tooltip>
+            <Group gap="xs">
+              <Tooltip label="View members">
+                <ActionIcon 
+                  variant="subtle" 
+                  size="lg"
+                  onClick={openMembersModal}
+                >
+                  <IconUsers size={20} />
+                </ActionIcon>
+              </Tooltip>
+              <Menu shadow="md" width={200}>
+                <Menu.Target>
+                  <Tooltip label="Group options">
+                    <ActionIcon 
+                      variant="subtle" 
+                      size="lg"
+                    >
+                      <IconDots size={20} />
+                    </ActionIcon>
+                  </Tooltip>
+                </Menu.Target>
+                <Menu.Dropdown>
+                  {isCurrentUserAdmin() && (
+                    <Menu.Item 
+                      leftSection={<IconUserPlus size={16} />}
+                      onClick={openInviteMembers}
+                    >
+                      Invite Members
+                    </Menu.Item>
+                  )}
+                  <Menu.Item 
+                    leftSection={<IconLogout size={16} />}
+                    color="red"
+                    onClick={() => setLeaveGroupConfirm(true)}
+                  >
+                    Leave Group
+                  </Menu.Item>
+                </Menu.Dropdown>
+              </Menu>
+            </Group>
           )}
         </Group>
       </Paper>
@@ -617,7 +654,9 @@ export const ChatArea = () => {
         }}
       >
         <Stack gap="sm">
-          {activeMessages.map((msg) => {
+          {activeMessages
+            .filter(msg => msg.messageType !== 'system') // Hide system messages
+            .map((msg) => {
             // Determine if this is the user's own message
             const isOwn = typeof msg.senderId === 'string' 
               ? msg.senderId === user?.id 
@@ -849,6 +888,48 @@ export const ChatArea = () => {
           }}
         />
       )}
+
+      {/* Leave Group Confirmation Modal */}
+      <Modal
+        opened={leaveGroupConfirm}
+        onClose={() => setLeaveGroupConfirm(false)}
+        title="Leave Group"
+        centered
+      >
+        <Stack gap="md">
+          <Text>
+            Are you sure you want to leave <strong>{activeConversation.type === 'group' ? activeConversation.groupName : 'this conversation'}</strong>?
+          </Text>
+          <Text size="sm" c="dimmed">
+            You won't be able to send or receive messages in this group unless someone adds you back.
+          </Text>
+          <Group justify="flex-end" gap="sm">
+            <Button 
+              variant="default" 
+              onClick={() => setLeaveGroupConfirm(false)}
+            >
+              Cancel
+            </Button>
+            <Button 
+              color="red" 
+              onClick={() => {
+                if (activeConversation.id) {
+                  leaveGroup(activeConversation.id);
+                  setLeaveGroupConfirm(false);
+                }
+              }}
+            >
+              Leave Group
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
+
+      <InviteMembersModal
+        opened={inviteMembersOpened}
+        onClose={closeInviteMembers}
+        conversation={activeConversation}
+      />
     </Stack>
   );
 };

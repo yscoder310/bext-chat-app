@@ -1,5 +1,5 @@
 import axiosInstance from '../lib/axios';
-import { Conversation, CreateGroupInput } from '../types';
+import { Conversation, CreateGroupInput, Invitation, PublicGroup } from '../types';
 
 export const conversationApi = {
   getUserConversations: async (): Promise<Conversation[]> => {
@@ -51,9 +51,36 @@ export const conversationApi = {
   },
 
   promoteToAdmin: async (conversationId: string, newAdminId: string): Promise<Conversation> => {
-    const { data } = await axiosInstance.put(`/conversations/${conversationId}/admin`, {
+    const { data} = await axiosInstance.put(`/conversations/${conversationId}/admin`, {
       newAdminId,
     });
     return data.data;
+  },
+
+  leaveGroup: async (conversationId: string): Promise<void> => {
+    await axiosInstance.post(`/conversations/${conversationId}/leave`);
+  },
+
+  // Invitation System
+  getPendingInvitations: async (): Promise<Invitation[]> => {
+    const { data } = await axiosInstance.get('/conversations/invitations/pending');
+    return data.data; // Extract data from { success: true, data: [...] }
+  },
+
+  getPublicGroups: async (search?: string, page = 1, limit = 20): Promise<{
+    groups: PublicGroup[];
+    total: number;
+    page: number;
+    pages: number;
+  }> => {
+    const { data } = await axiosInstance.get('/conversations/public/discover', {
+      params: { search, page, limit }
+    });
+    return data.data; // Extract data from { success: true, data: {...} }
+  },
+
+  joinPublicGroup: async (conversationId: string): Promise<Conversation> => {
+    const { data } = await axiosInstance.post(`/conversations/${conversationId}/join`);
+    return data.data; // Extract data from { success: true, data: {...} }
   },
 };

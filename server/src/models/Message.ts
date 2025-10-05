@@ -12,7 +12,6 @@ const messageSchema = new Schema<IMessageDocument>(
     },
     senderId: {
       type: String,
-      required: true,
       ref: 'User',
     },
     content: {
@@ -22,8 +21,16 @@ const messageSchema = new Schema<IMessageDocument>(
     },
     messageType: {
       type: String,
-      enum: ['text', 'image', 'file'],
+      enum: ['text', 'image', 'file', 'system'],
       default: 'text',
+    },
+    systemMessageType: {
+      type: String,
+      enum: ['member-added', 'member-removed', 'admin-promoted', 'member-left', 'group-created'],
+    },
+    metadata: {
+      type: Map,
+      of: String,
     },
     isRead: {
       type: Boolean,

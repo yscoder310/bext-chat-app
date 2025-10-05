@@ -292,6 +292,62 @@ export const initializeSocket = (httpServer: HTTPServer) => {
       socket.emit('online-users', onlineUserIds);
     });
 
+    // NEW: Group invitation events
+    socket.on('invite-to-group', async (data: { conversationId: string; userIds: string[] }) => {
+      try {
+        const { ConversationService } = await import('../services/conversationService');
+        const invitations = await ConversationService.inviteToGroup(
+          data.conversationId,
+          userId,
+          data.userIds
+        );
+
+        // Notify invited users
+        invitations.forEach((invitation: any) => {
+          const targetUserId = invitation.invitedUser._id.toString();
+          const targetSocketId = onlineUsers[targetUserId];
+          if (targetSocketId) {
+            chatNamespace.to(targetSocketId).emit('group-invitation', invitation);
+          }
+        });
+
+        socket.emit('invitations-sent', { count: invitations.length });
+      } catch (error: any) {
+        socket.emit('error', { message: error.message });
+      }
+    });
+
+    socket.on('accept-invitation', async (data: { invitationId: string }) => {
+      try {
+        const { ConversationService } = await import('../services/conversationService');
+        const result = await ConversationService.acceptInvitation(data.invitationId, userId);
+
+        // Join socket room
+        socket.join(`conversation:${result.conversation.id}`);
+
+        // Notify user
+        socket.emit('invitation-accepted', result.conversation);
+
+        // Notify existing members
+        socket.to(`conversation:${result.conversation.id}`).emit('member-joined', {
+          conversationId: result.conversation.id,
+          member: result.conversation.participants.find((m: any) => m.id === userId),
+        });
+      } catch (error: any) {
+        socket.emit('error', { message: error.message });
+      }
+    });
+
+    socket.on('decline-invitation', async (data: { invitationId: string }) => {
+      try {
+        const { ConversationService } = await import('../services/conversationService');
+        await ConversationService.declineInvitation(data.invitationId, userId);
+        socket.emit('invitation-declined', { invitationId: data.invitationId });
+      } catch (error: any) {
+        socket.emit('error', { message: error.message });
+      }
+    });
+
     // Disconnect
     socket.on('disconnect', async () => {
       console.log(`❌ User disconnected: ${userId}`);
