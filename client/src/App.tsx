@@ -12,6 +12,7 @@ import { ProtectedRoute } from './components/ProtectedRoute';
 import { PageLoader } from './components/LoadingFallback';
 import { socketService } from './lib/socket';
 import { getSetting } from './components/UserSettingsModal';
+import { initializeNotifications, isNotificationSupported } from './utils/browserNotifications';
 import '@mantine/core/styles.css';
 import '@mantine/notifications/styles.css';
 
@@ -31,6 +32,24 @@ function AppContent() {
     const token = localStorage.getItem('token');
     if (token && !socketService.isConnected()) {
       socketService.connect(token);
+    }
+
+    // Request notification permission when user interacts with the app
+    // This ensures notifications work when tab is minimized or inactive
+    if (token && isNotificationSupported()) {
+      const desktopNotifications = getSetting('desktopNotifications') as boolean;
+      if (desktopNotifications && Notification.permission === 'default') {
+        // Request permission on first user interaction (click, keypress, etc.)
+        const requestPermission = () => {
+          initializeNotifications();
+          // Remove listeners after first interaction
+          document.removeEventListener('click', requestPermission);
+          document.removeEventListener('keypress', requestPermission);
+        };
+        
+        document.addEventListener('click', requestPermission, { once: true });
+        document.addEventListener('keypress', requestPermission, { once: true });
+      }
     }
   }, []);
 

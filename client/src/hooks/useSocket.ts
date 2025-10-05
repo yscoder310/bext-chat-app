@@ -17,6 +17,12 @@ import {
 import { socketService } from '../lib/socket';
 import { Message } from '../types';
 import { playNotificationSound } from '../utils/notificationSound';
+import { 
+  showBrowserNotification, 
+  isNotificationEnabled, 
+  isTabHidden,
+  updatePageTitle 
+} from '../utils/browserNotifications';
 import { getSetting } from '../components/UserSettingsModal';
 
 export const useSocket = () => {
@@ -56,33 +62,35 @@ export const useSocket = () => {
           playNotificationSound();
         }
         
-        // Show desktop notification if enabled and permission granted
+        // Extract sender name from message
+        let senderName = 'Unknown';
+        if (typeof message.senderId !== 'string') {
+          senderName = message.senderId.username || 'Unknown';
+        }
+        
+        // Show browser notification when tab is hidden/minimized (cross-platform)
         const desktopNotifications = getSetting('desktopNotifications') as boolean;
-        if (desktopNotifications && 'Notification' in window && Notification.permission === 'granted') {
-          const messagePreview = getSetting('messagePreview') as boolean;
-          
-          // Extract sender name from message
-          let senderName = 'Unknown';
-          if (typeof message.senderId !== 'string') {
-            senderName = message.senderId.username || 'Unknown';
+        const messagePreview = getSetting('messagePreview') as boolean;
+        
+        if (desktopNotifications && isNotificationEnabled()) {
+          // Only show notification if tab is minimized/inactive
+          // This prevents redundant notifications when user is actively using the app
+          if (isTabHidden()) {
+            showBrowserNotification({
+              title: `New message from ${senderName}`,
+              body: messagePreview ? message.content : 'You have a new message',
+              tag: message.conversationId, // Prevents duplicate notifications
+              onClick: () => {
+                // Focus window and switch to the conversation
+                window.focus();
+                dispatch(setActiveConversation(message.conversationId));
+              },
+              autoClose: 8000, // Auto-close after 8 seconds
+            });
+            
+            // Also update page title to show notification count
+            updatePageTitle(1, 'New Message - Chat App');
           }
-          
-          // Create desktop notification
-          const notification = new Notification(`New message from ${senderName}`, {
-            body: messagePreview ? message.content : 'You have a new message',
-            icon: '/favicon.ico',
-            tag: message.conversationId, // Prevents duplicate notifications
-            requireInteraction: false,
-          });
-          
-          // Auto-close after 5 seconds
-          setTimeout(() => notification.close(), 5000);
-          
-          // Focus app when notification is clicked
-          notification.onclick = () => {
-            window.focus();
-            notification.close();
-          };
         }
       }
     });
@@ -118,7 +126,20 @@ export const useSocket = () => {
 
     // Handle new chat request (1-on-1 conversation request)
     socketService.onNewChatRequest(() => {
-      // TODO: Show notification or update UI for new chat request
+      // Show browser notification for new chat request when tab is hidden
+      const desktopNotifications = getSetting('desktopNotifications') as boolean;
+      
+      if (desktopNotifications && isNotificationEnabled() && isTabHidden()) {
+        showBrowserNotification({
+          title: 'New Chat Request',
+          body: 'You have received a new chat request',
+          onClick: () => {
+            window.focus();
+          },
+          autoClose: 10000,
+        });
+        updatePageTitle(1, 'New Request - Chat App');
+      }
     });
 
     // Handle accepted chat request
@@ -201,6 +222,21 @@ export const useSocket = () => {
     socketService.onGroupInvitation(() => {
       // Refetch invitations to show new invitation
       queryClient.invalidateQueries({ queryKey: ['invitations'] });
+      
+      // Show browser notification for new group invitation when tab is hidden
+      const desktopNotifications = getSetting('desktopNotifications') as boolean;
+      
+      if (desktopNotifications && isNotificationEnabled() && isTabHidden()) {
+        showBrowserNotification({
+          title: 'Group Invitation',
+          body: 'You have been invited to join a group',
+          onClick: () => {
+            window.focus();
+          },
+          autoClose: 10000,
+        });
+        updatePageTitle(1, 'New Invitation - Chat App');
+      }
     });
 
     // Handle invitations sent successfully
@@ -265,6 +301,25 @@ export const useSocket = () => {
       clearInterval(onlineUsersInterval);
     };
   }, [token]);
+
+  /**
+   * Reset page title when user focuses the tab
+   * This clears notification indicators when user returns to the app
+   */
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (!isTabHidden()) {
+        // User is back on the tab, reset the title
+        updatePageTitle(0, 'Chat App');
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, []);
 
   // Socket methods
   const joinConversation = useCallback((conversationId: string) => {
