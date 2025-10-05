@@ -9,6 +9,14 @@ interface ChatState {
   onlineUsers: string[];
   isLoadingConversations: boolean;
   isLoadingMessages: boolean;
+  scrollPositions: { [conversationId: string]: number };
+  messagePagination: { 
+    [conversationId: string]: { 
+      page: number; 
+      hasMore: boolean;
+      isLoadingMore: boolean;
+    } 
+  };
 }
 
 const initialState: ChatState = {
@@ -19,6 +27,8 @@ const initialState: ChatState = {
   onlineUsers: [],
   isLoadingConversations: false,
   isLoadingMessages: false,
+  scrollPositions: {},
+  messagePagination: {},
 };
 
 const chatSlice = createSlice({
@@ -108,6 +118,43 @@ const chatSlice = createSlice({
     setMessages: (state, action: PayloadAction<{ conversationId: string; messages: Message[] }>) => {
       state.messages[action.payload.conversationId] = action.payload.messages;
       state.isLoadingMessages = false;
+    },
+    prependMessages: (state, action: PayloadAction<{ conversationId: string; messages: Message[] }>) => {
+      const { conversationId, messages } = action.payload;
+      if (!state.messages[conversationId]) {
+        state.messages[conversationId] = [];
+      }
+      // Prepend older messages to the beginning
+      const existingIds = new Set(state.messages[conversationId].map(m => m._id));
+      const newMessages = messages.filter(m => !existingIds.has(m._id));
+      state.messages[conversationId] = [...newMessages, ...state.messages[conversationId]];
+      
+      // Note: isLoadingMore is now set to false via setLoadingMoreMessages action
+      // Don't set it here to avoid race conditions with scroll behavior
+    },
+    setScrollPosition: (state, action: PayloadAction<{ conversationId: string; position: number }>) => {
+      const { conversationId, position } = action.payload;
+      state.scrollPositions[conversationId] = position;
+    },
+    setPagination: (state, action: PayloadAction<{ 
+      conversationId: string; 
+      page: number; 
+      hasMore: boolean;
+    }>) => {
+      const { conversationId, page, hasMore } = action.payload;
+      state.messagePagination[conversationId] = {
+        page,
+        hasMore,
+        isLoadingMore: false,
+      };
+    },
+    setLoadingMoreMessages: (state, action: PayloadAction<{ conversationId: string; isLoading: boolean }>) => {
+      const { conversationId, isLoading } = action.payload;
+      if (!state.messagePagination[conversationId]) {
+        state.messagePagination[conversationId] = { page: 1, hasMore: true, isLoadingMore: isLoading };
+      } else {
+        state.messagePagination[conversationId].isLoadingMore = isLoading;
+      }
     },
     addMessage: {
       reducer: (state, action: PayloadAction<{ message: Message; currentUserId?: string }>) => {
@@ -277,6 +324,10 @@ export const {
   removeConversation,
   setActiveConversation,
   setMessages,
+  prependMessages,
+  setScrollPosition,
+  setPagination,
+  setLoadingMoreMessages,
   addMessage,
   updateMessage,
   removeMessage,

@@ -44,7 +44,6 @@ interface ChatHeaderProps {
 
 export const ChatHeader = ({
   conversation,
-  currentUserId,
   displayName,
   avatarInitial,
   isOtherUserOnline,

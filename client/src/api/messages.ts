@@ -15,7 +15,7 @@ export const messageApi = {
   getMessages: async (
     conversationId: string,
     page = 1,
-    limit = 50
+    limit = 20
   ): Promise<MessagesResponse> => {
     const { data } = await axiosInstance.get(`/messages/${conversationId}`, {
       params: { page, limit },

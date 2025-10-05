@@ -1,10 +1,13 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useEffect } from 'react';
+import { useEffect, useCallback } from 'react';
 import { useAppDispatch, useAppSelector } from '../store/hooks';
 import {
   setConversations,
   setActiveConversation,
   setMessages,
+  prependMessages,
+  setPagination,
+  setLoadingMoreMessages,
   addConversation,
   removeConversation,
   clearTypingUsers,
@@ -22,7 +25,7 @@ export const useChat = () => {
   const queryClient = useQueryClient();
   const { joinConversation, leaveConversation } = useSocket();
   
-  const { conversations, activeConversationId, messages, typingUsers, isLoadingMessages } =
+  const { conversations, activeConversationId, messages, typingUsers, isLoadingMessages, messagePagination } =
     useAppSelector((state) => state.chat);
   const { user } = useAppSelector((state) => state.auth);
 
@@ -58,7 +61,7 @@ export const useChat = () => {
   // Fetch messages for active conversation
   const messagesQuery = useQuery({
     queryKey: ['messages', activeConversationId],
-    queryFn: () => messageApi.getMessages(activeConversationId!, 1, 50),
+    queryFn: () => messageApi.getMessages(activeConversationId!, 1, 20),
     enabled: !!activeConversationId,
   });
 
@@ -68,6 +71,14 @@ export const useChat = () => {
       dispatch(setMessages({
         conversationId: activeConversationId,
         messages: messagesQuery.data.messages,
+      }));
+      
+      // Update pagination info
+      const { page, pages } = messagesQuery.data.pagination;
+      dispatch(setPagination({
+        conversationId: activeConversationId,
+        page,
+        hasMore: page < pages,
       }));
     }
   }, [messagesQuery.data, activeConversationId, dispatch]);
@@ -188,6 +199,46 @@ export const useChat = () => {
   // Get typing users for active conversation
   const activeTypingUsers = activeConversationId ? typingUsers[activeConversationId] || [] : [];
 
+  // Get pagination info for active conversation
+  const activePagination = activeConversationId ? messagePagination[activeConversationId] : null;
+
+  // Load more messages (for pagination)
+  const loadMoreMessages = useCallback(async () => {
+    if (!activeConversationId || !activePagination?.hasMore || activePagination?.isLoadingMore) {
+      return;
+    }
+
+    const nextPage = activePagination.page + 1;
+    
+    try {
+      // Mark as loading BEFORE fetching
+      dispatch(setLoadingMoreMessages({ conversationId: activeConversationId, isLoading: true }));
+      
+      const response = await messageApi.getMessages(activeConversationId, nextPage, 20);
+      
+      // Prepend older messages
+      dispatch(prependMessages({
+        conversationId: activeConversationId,
+        messages: response.messages,
+      }));
+      
+      // Update pagination
+      dispatch(setPagination({
+        conversationId: activeConversationId,
+        page: response.pagination.page,
+        hasMore: response.pagination.page < response.pagination.pages,
+      }));
+      
+      // Set loading to false after a delay to ensure scroll restoration completes
+      setTimeout(() => {
+        dispatch(setLoadingMoreMessages({ conversationId: activeConversationId, isLoading: false }));
+      }, 300);
+    } catch (error) {
+      console.error('Failed to load more messages:', error);
+      dispatch(setLoadingMoreMessages({ conversationId: activeConversationId, isLoading: false }));
+    }
+  }, [activeConversationId, activePagination, dispatch]);
+
   // Update group name
   const updateGroupNameMutation = useMutation({
     mutationFn: ({ conversationId, groupName }: { conversationId: string; groupName: string }) =>
@@ -261,6 +312,7 @@ export const useChat = () => {
     activeConversation,
     activeMessages,
     activeTypingUsers,
+    activePagination,
     isLoadingConversations: conversationsQuery.isLoading,
     isLoadingMessages: messagesQuery.isLoading || isLoadingMessages,
     selectConversation,
@@ -272,5 +324,6 @@ export const useChat = () => {
     leaveGroup: leaveGroupMutation.mutate,
     refetchConversations: conversationsQuery.refetch,
     refetchMessages: messagesQuery.refetch,
+    loadMoreMessages,
   };
 };

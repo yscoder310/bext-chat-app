@@ -39,7 +39,7 @@ export const ChatArea = () => {
   const isTypingRef = useRef(false);
   const lastConversationIdRef = useRef<string | null>(null);
   
-  const { activeConversation, activeMessages, activeTypingUsers, isLoadingMessages, updateGroupName, promoteToAdmin, leaveGroup } = useChat();
+  const { activeConversation, activeMessages, activeTypingUsers, activePagination, isLoadingMessages, updateGroupName, promoteToAdmin, leaveGroup, loadMoreMessages } = useChat();
   const { sendMessage: socketSendMessage, startTyping, stopTyping } = useSocket();
   const { user } = useAppSelector((state) => state.auth);
 
@@ -336,6 +336,10 @@ export const ChatArea = () => {
         messages={activeMessages}
         currentUserId={user?.id}
         formatMessageTime={formatMessageTime}
+        conversationId={activeConversation?.id}
+        onLoadMore={loadMoreMessages}
+        hasMore={activePagination?.hasMore ?? false}
+        isLoadingMore={activePagination?.isLoadingMore ?? false}
       />
 
       <MessageInput
