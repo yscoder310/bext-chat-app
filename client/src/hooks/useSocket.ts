@@ -16,6 +16,8 @@ import {
 } from '../store/slices/chatSlice';
 import { socketService } from '../lib/socket';
 import { Message } from '../types';
+import { playNotificationSound } from '../utils/notificationSound';
+import { getSetting } from '../components/UserSettingsModal';
 
 export const useSocket = () => {
   const dispatch = useAppDispatch();
@@ -39,6 +41,49 @@ export const useSocket = () => {
     socketService.onNewMessage((message: Message) => {
       console.log('Redux: Dispatching addMessage', message);
       dispatch(addMessage(message, user?.id));
+      
+      // Only show notifications for messages from other users
+      const isOwnMessage = typeof message.senderId === 'string' 
+        ? message.senderId === user?.id 
+        : (message.senderId as any)?.id === user?.id;
+      
+      // Don't notify for own messages or if the conversation is currently active
+      if (!isOwnMessage && message.conversationId !== activeConversationId) {
+        // Play sound notification if enabled
+        const soundEnabled = getSetting('soundEnabled') as boolean;
+        if (soundEnabled) {
+          playNotificationSound();
+        }
+        
+        // Show desktop notification if enabled
+        const desktopNotifications = getSetting('desktopNotifications') as boolean;
+        if (desktopNotifications && 'Notification' in window && Notification.permission === 'granted') {
+          const messagePreview = getSetting('messagePreview') as boolean;
+          
+          // Get sender name
+          let senderName = 'Unknown';
+          if (typeof message.senderId !== 'string') {
+            senderName = message.senderId.username || 'Unknown';
+          }
+          
+          // Create notification
+          const notification = new Notification(`New message from ${senderName}`, {
+            body: messagePreview ? message.content : 'You have a new message',
+            icon: '/favicon.ico', // You can replace this with your app icon
+            tag: message.conversationId, // Prevents duplicate notifications for same conversation
+            requireInteraction: false,
+          });
+          
+          // Close notification after 5 seconds
+          setTimeout(() => notification.close(), 5000);
+          
+          // Optional: Focus the app when notification is clicked
+          notification.onclick = () => {
+            window.focus();
+            notification.close();
+          };
+        }
+      }
     });
 
     // Typing indicators

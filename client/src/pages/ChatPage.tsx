@@ -1,15 +1,24 @@
 import { useEffect } from 'react';
-import { AppShell, Burger, Group, Title, Avatar, Menu } from '@mantine/core';
+import { AppShell, Burger, Group, Title, Avatar, Menu, useMantineColorScheme, useMantineTheme } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
-import { IconLogout, IconSettings } from '@tabler/icons-react';
+import { LogOut, Settings, User } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useSocket } from '../hooks/useSocket';
 import { ConversationList } from '../components/ConversationList';
 import { ChatArea } from '../components/ChatArea';
 import { ChatRequestButton } from '../components/ChatRequestButton';
+import { UserProfileModal } from '../components/UserProfileModal';
+import { UserSettingsModal } from '../components/UserSettingsModal';
+import { getAvatarColor } from '../utils/avatarColor';
 
 export const ChatPage = () => {
+  const theme = useMantineTheme();
+  const { colorScheme } = useMantineColorScheme();
+  const isDark = colorScheme === 'dark';
+  
   const [opened, { toggle }] = useDisclosure();
+  const [profileOpened, { open: openProfile, close: closeProfile }] = useDisclosure(false);
+  const [settingsOpened, { open: openSettings, close: closeSettings }] = useDisclosure(false);
   const { user, logout } = useAuth();
   
   // Initialize socket connection and listeners
@@ -30,7 +39,11 @@ export const ChatPage = () => {
       padding={0}
       styles={{
         main: {
-          backgroundColor: '#f1f3f5',
+          backgroundColor: isDark ? theme.colors.dark[7] : theme.colors.gray[1],
+        },
+        header: {
+          backgroundColor: isDark ? theme.colors.dark[6] : 'white',
+          borderBottom: `1px solid ${isDark ? theme.colors.dark[5] : theme.colors.gray[3]}`,
         },
       }}
     >
@@ -52,21 +65,27 @@ export const ChatPage = () => {
               <Menu.Target>
                 <Avatar 
                   src={user?.avatar} 
-                  alt={user?.username} 
+                  alt={user?.username}
+                  color={getAvatarColor(user?.username || 'User')}
                   style={{ 
                     cursor: 'pointer',
                   }}
-                />
+                >
+                  {user?.username?.[0]?.toUpperCase()}
+                </Avatar>
               </Menu.Target>
 
               <Menu.Dropdown>
                 <Menu.Label>{user?.username}</Menu.Label>
-                <Menu.Item leftSection={<IconSettings size={14} />}>
+                <Menu.Item leftSection={<User size={14} />} onClick={openProfile}>
+                  Profile Settings
+                </Menu.Item>
+                <Menu.Item leftSection={<Settings size={14} />} onClick={openSettings}>
                   Settings
                 </Menu.Item>
                 <Menu.Divider />
                 <Menu.Item
-                  leftSection={<IconLogout size={14} />}
+                  leftSection={<LogOut size={14} />}
                   color="red"
                   onClick={logout}
                 >
@@ -81,9 +100,11 @@ export const ChatPage = () => {
       <AppShell.Navbar 
         p="md"
         style={{
-          backgroundColor: '#ffffff',
-          borderRight: '1px solid #e9ecef',
-          boxShadow: '2px 0 8px rgba(0, 0, 0, 0.04)',
+          backgroundColor: isDark ? theme.colors.dark[6] : 'white',
+          borderRight: `1px solid ${isDark ? theme.colors.dark[5] : theme.colors.gray[2]}`,
+          boxShadow: isDark 
+            ? '2px 0 8px rgba(0, 0, 0, 0.3)' 
+            : '2px 0 8px rgba(0, 0, 0, 0.04)',
         }}
       >
         <ConversationList />
@@ -92,6 +113,9 @@ export const ChatPage = () => {
       <AppShell.Main>
         <ChatArea />
       </AppShell.Main>
+
+      <UserProfileModal opened={profileOpened} onClose={closeProfile} />
+      <UserSettingsModal opened={settingsOpened} onClose={closeSettings} />
     </AppShell>
   );
 };

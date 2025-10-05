@@ -1,7 +1,8 @@
 import { Modal, Stack, ScrollArea, Group, Avatar, Text, Badge, Box, Menu, ActionIcon, TextInput, Divider, Paper } from '@mantine/core';
-import { IconDots, IconCrown, IconSearch, IconUserMinus } from '@tabler/icons-react';
+import { MoreVertical, Crown, Search, UserMinus } from 'lucide-react';
 import { useState, useMemo } from 'react';
 import { Conversation } from '../types';
+import { getAvatarColor } from '../utils/avatarColor';
 
 interface GroupMembersModalProps {
   opened: boolean;
@@ -133,7 +134,7 @@ export const GroupMembersModal = ({
         {/* Search Bar */}
         <TextInput
           placeholder="Search members..."
-          leftSection={<IconSearch size={16} />}
+          leftSection={<Search size={16} />}
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           styles={{
@@ -187,7 +188,7 @@ export const GroupMembersModal = ({
                         <Group justify="space-between" wrap="nowrap">
                           <Group style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ position: 'relative' }}>
-                              <Avatar size={40} color="blue" radius="xl">
+                              <Avatar size={40} color={getAvatarColor(member.username || 'User')} radius="xl">
                                 {member.username?.[0]?.toUpperCase() || '?'}
                               </Avatar>
                               <Box
@@ -219,7 +220,7 @@ export const GroupMembersModal = ({
                                     size="xs" 
                                     color="yellow" 
                                     variant="light" 
-                                    leftSection={<IconCrown size={10} />}
+                                    leftSection={<Crown size={10} />}
                                   >
                                     Admin
                                   </Badge>
@@ -241,13 +242,13 @@ export const GroupMembersModal = ({
                                   size="lg"
                                   style={{ flexShrink: 0 }}
                                 >
-                                  <IconDots size={18} />
+                                  <MoreVertical size={18} />
                                 </ActionIcon>
                               </Menu.Target>
                               <Menu.Dropdown>
                                 {!isAdmin(member.id) && onPromoteToAdmin && (
                                   <Menu.Item 
-                                    leftSection={<IconCrown size={16} />}
+                                    leftSection={<Crown size={16} />}
                                     onClick={() => onPromoteToAdmin(member.id)}
                                     color="blue"
                                   >
@@ -256,7 +257,7 @@ export const GroupMembersModal = ({
                                 )}
                                 {onRemoveMember && (
                                   <Menu.Item 
-                                    leftSection={<IconUserMinus size={16} />}
+                                    leftSection={<UserMinus size={16} />}
                                     onClick={() => onRemoveMember(member.id)}
                                     color="red"
                                   >
@@ -312,7 +313,7 @@ export const GroupMembersModal = ({
                       >
                         <Group justify="space-between" wrap="nowrap">
                           <Group style={{ flex: 1, minWidth: 0 }}>
-                            <Avatar size={40} color="gray" radius="xl">
+                            <Avatar size={40} color={getAvatarColor(member.username || 'User')} radius="xl">
                               {member.username?.[0]?.toUpperCase() || '?'}
                             </Avatar>
                             <div style={{ flex: 1, minWidth: 0 }}>
@@ -330,7 +331,7 @@ export const GroupMembersModal = ({
                                     size="xs" 
                                     color="gray" 
                                     variant="light" 
-                                    leftSection={<IconCrown size={10} />}
+                                    leftSection={<Crown size={10} />}
                                   >
                                     Admin
                                   </Badge>
@@ -352,13 +353,13 @@ export const GroupMembersModal = ({
                                   size="lg"
                                   style={{ flexShrink: 0 }}
                                 >
-                                  <IconDots size={18} />
+                                  <MoreVertical size={18} />
                                 </ActionIcon>
                               </Menu.Target>
                               <Menu.Dropdown>
                                 {!isAdmin(member.id) && onPromoteToAdmin && (
                                   <Menu.Item 
-                                    leftSection={<IconCrown size={16} />}
+                                    leftSection={<Crown size={16} />}
                                     onClick={() => onPromoteToAdmin(member.id)}
                                     color="blue"
                                   >
@@ -367,7 +368,7 @@ export const GroupMembersModal = ({
                                 )}
                                 {onRemoveMember && (
                                   <Menu.Item 
-                                    leftSection={<IconUserMinus size={16} />}
+                                    leftSection={<UserMinus size={16} />}
                                     onClick={() => onRemoveMember(member.id)}
                                     color="red"
                                   >

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Modal, TextInput, Textarea, Button, Group, Stack } from '@mantine/core';
-import { IconEdit } from '@tabler/icons-react';
+import { Edit } from 'lucide-react';
 import { conversationApi } from '../api/conversations';
 import { notifications } from '@mantine/notifications';
 import { useDispatch } from 'react-redux';
@@ -81,7 +81,7 @@ export function EditGroupDetailsModal({ opened, onClose, conversation }: EditGro
             value={groupName}
             onChange={(e) => setGroupName(e.target.value)}
             required
-            leftSection={<IconEdit size={16} />}
+            leftSection={<Edit size={16} />}
             maxLength={50}
           />
 
@@ -107,7 +107,7 @@ export function EditGroupDetailsModal({ opened, onClose, conversation }: EditGro
             <Button
               type="submit"
               loading={loading}
-              leftSection={<IconEdit size={16} />}
+              leftSection={<Edit size={16} />}
             >
               Save Changes
             </Button>

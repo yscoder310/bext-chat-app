@@ -1,10 +1,10 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { MantineProvider } from '@mantine/core';
+import { MantineProvider, createTheme } from '@mantine/core';
 import { Notifications } from '@mantine/notifications';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { Provider } from 'react-redux';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { store } from './store';
 import { queryClient } from './lib/queryClient';
 import { ProtectedRoute } from './components/ProtectedRoute';
@@ -12,8 +12,14 @@ import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
 import { ChatPage } from './pages/ChatPage';
 import { socketService } from './lib/socket';
+import { getSetting } from './components/UserSettingsModal';
 import '@mantine/core/styles.css';
 import '@mantine/notifications/styles.css';
+
+const theme = createTheme({
+  primaryColor: 'blue',
+  defaultRadius: 'md',
+});
 
 function AppContent() {
   useEffect(() => {
@@ -44,10 +50,38 @@ function AppContent() {
 }
 
 function App() {
+  const [colorScheme, setColorScheme] = useState<'light' | 'dark'>(() => {
+    const darkMode = getSetting('darkMode') as boolean;
+    return darkMode ? 'dark' : 'light';
+  });
+
+  useEffect(() => {
+    // Listen for storage changes to sync theme across tabs
+    const handleStorageChange = () => {
+      const darkMode = getSetting('darkMode') as boolean;
+      const newScheme: 'light' | 'dark' = darkMode ? 'dark' : 'light';
+      setColorScheme(newScheme);
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    
+    // Also listen for custom event from UserSettingsModal
+    const handleThemeChange = (e: CustomEvent) => {
+      setColorScheme(e.detail.colorScheme);
+    };
+    
+    window.addEventListener('themeChange' as any, handleThemeChange as any);
+
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('themeChange' as any, handleThemeChange as any);
+    };
+  }, []);
+
   return (
     <Provider store={store}>
       <QueryClientProvider client={queryClient}>
-        <MantineProvider>
+        <MantineProvider theme={theme} forceColorScheme={colorScheme}>
           <Notifications position="top-right" />
           <AppContent />
         </MantineProvider>

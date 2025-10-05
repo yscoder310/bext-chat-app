@@ -1,5 +1,5 @@
 import { Popover, ActionIcon, Badge, Stack, Group, Avatar, Text, Button, Loader, ScrollArea } from '@mantine/core';
-import { IconBell } from '@tabler/icons-react';
+import { Bell } from 'lucide-react';
 import { useState } from 'react';
 import { useChatRequests } from '../hooks/useChatRequests';
 
@@ -35,7 +35,7 @@ export const ChatRequestButton = () => {
           onClick={() => setOpened((o) => !o)}
           style={{ position: 'relative' }}
         >
-          <IconBell size={22} />
+          <Bell size={22} />
           {pendingRequests.length > 0 && (
             <Badge
               size="xs"

@@ -11,9 +11,10 @@ import {
   ActionIcon,
   Loader,
   Menu,
-  Indicator,
+  useMantineColorScheme,
+  useMantineTheme,
 } from '@mantine/core';
-import { IconSearch, IconPlus, IconUsers, IconUser, IconMail, IconWorld } from '@tabler/icons-react';
+import { Search, Plus, Users, User, Mail, Globe } from 'lucide-react';
 import { format, isToday, isYesterday, differenceInMinutes, differenceInDays } from 'date-fns';
 import { useChat } from '../hooks/useChat';
 import { useChatRequests } from '../hooks/useChatRequests';
@@ -25,8 +26,13 @@ import { InvitationNotification } from './InvitationNotification';
 import { PublicGroupsDiscovery } from './PublicGroupsDiscovery';
 import { useAppSelector } from '../store/hooks';
 import { conversationApi } from '../api/conversations';
+import { getAvatarColor } from '../utils/avatarColor';
 
 export const ConversationList = () => {
+  const theme = useMantineTheme();
+  const { colorScheme } = useMantineColorScheme();
+  const isDark = colorScheme === 'dark';
+  
   const [search, setSearch] = useState('');
   const [userListOpened, { open: openUserList, close: closeUserList }] = useDisclosure(false);
   const [groupModalOpened, { open: openGroupModal, close: closeGroupModal }] = useDisclosure(false);
@@ -157,17 +163,18 @@ export const ConversationList = () => {
         <Group>
           <TextInput
             placeholder="Search conversations..."
-            leftSection={<IconSearch size={16} />}
+            leftSection={<Search size={16} />}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             style={{ flex: 1 }}
             styles={{
               input: {
-                backgroundColor: '#f8f9fa',
-                border: '1px solid #e9ecef',
+                backgroundColor: isDark ? theme.colors.dark[6] : theme.colors.gray[0],
+                border: `1px solid ${isDark ? theme.colors.dark[4] : theme.colors.gray[2]}`,
+                color: isDark ? theme.colors.gray[0] : 'black',
                 '&:focus': {
-                  backgroundColor: 'white',
-                  borderColor: '#228be6',
+                  backgroundColor: isDark ? theme.colors.dark[7] : 'white',
+                  borderColor: theme.colors.blue[6],
                 },
               }
             }}
@@ -183,23 +190,23 @@ export const ConversationList = () => {
                   boxShadow: '0 2px 8px rgba(34, 139, 230, 0.3)',
                 }}
               >
-                <IconPlus size={18} />
+                <Plus size={18} />
               </ActionIcon>
             </Menu.Target>
 
             <Menu.Dropdown>
-              <Menu.Item leftSection={<IconUser size={16} />} onClick={openUserList}>
+              <Menu.Item leftSection={<User size={16} />} onClick={openUserList}>
                 New Chat
               </Menu.Item>
-              <Menu.Item leftSection={<IconUsers size={16} />} onClick={openGroupModal}>
+              <Menu.Item leftSection={<Users size={16} />} onClick={openGroupModal}>
                 New Group
               </Menu.Item>
               <Menu.Divider />
-              <Menu.Item leftSection={<IconWorld size={16} />} onClick={openPublicGroups}>
+              <Menu.Item leftSection={<Globe size={16} />} onClick={openPublicGroups}>
                 Discover Public Groups
               </Menu.Item>
               <Menu.Item 
-                leftSection={<IconMail size={16} />} 
+                leftSection={<Mail size={16} />} 
                 onClick={openInvitations}
                 rightSection={
                   invitations.length > 0 && (
@@ -239,13 +246,15 @@ export const ConversationList = () => {
                   borderRadius: '10px',
                   backgroundColor:
                     activeConversation?.id === conv.id 
-                      ? '#e7f5ff' 
+                      ? (isDark ? theme.colors.dark[5] : theme.colors.blue[0])
                       : 'transparent',
                   transition: 'all 0.2s ease',
                 }}
                 onMouseEnter={(e) => {
                   if (activeConversation?.id !== conv.id) {
-                    e.currentTarget.style.backgroundColor = '#f8f9fa';
+                    e.currentTarget.style.backgroundColor = isDark 
+                      ? theme.colors.dark[6] 
+                      : theme.colors.gray[0];
                   }
                 }}
                 onMouseLeave={(e) => {
@@ -258,10 +267,10 @@ export const ConversationList = () => {
                   <div style={{ position: 'relative' }}>
                     <Avatar 
                       size={46}
-                      color="blue"
+                      color={getAvatarColor(getConversationName(conv))}
                       variant="light"
                       style={{
-                        border: '2px solid #e9ecef',
+                        border: `2px solid ${isDark ? theme.colors.dark[4] : theme.colors.gray[2]}`,
                       }}
                     >
                       {getConversationName(conv)?.[0] || '?'}
@@ -276,19 +285,28 @@ export const ConversationList = () => {
                           height: 12,
                           borderRadius: '50%',
                           backgroundColor: getOtherUserOnlineStatus(conv) ? '#40c057' : '#868e96',
-                          border: '2px solid white',
+                          border: `2px solid ${isDark ? theme.colors.dark[7] : 'white'}`,
                           boxShadow: '0 0 0 1px rgba(0,0,0,0.1)',
                         }}
                       />
                     )}
                   </div>
-                  <div style={{ flex: 1 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
                     <Group justify="space-between" wrap="nowrap">
-                      <Text size="sm" fw={500} style={{ flex: 1 }}>
+                      <Text 
+                        size="sm" 
+                        fw={500} 
+                        style={{ 
+                          flex: 1,
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
                         {getConversationName(conv)}
                       </Text>
                       {getLastMessageTime(conv) && (
-                        <Text size="xs" c="dimmed" style={{ flexShrink: 0 }}>
+                        <Text size="xs" c="dimmed" style={{ flexShrink: 0, marginLeft: 8 }}>
                           {getLastMessageTime(conv)}
                         </Text>
                       )}
@@ -296,13 +314,26 @@ export const ConversationList = () => {
                     <Text 
                       size="xs" 
                       c={getTypingStatus(conv) ? 'blue' : 'dimmed'} 
-                      truncate
-                      style={{ fontStyle: getTypingStatus(conv) ? 'italic' : 'normal' }}
+                      style={{ 
+                        fontStyle: getTypingStatus(conv) ? 'italic' : 'normal',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
                     >
                       {getTypingStatus(conv) ? 'typing...' : getLastMessageText(conv)}
                     </Text>
                     {conv.type === 'group' && conv.participants && (
-                      <Text size="xs" c="dimmed" mt={2}>
+                      <Text 
+                        size="xs" 
+                        c="dimmed" 
+                        mt={2}
+                        style={{
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
                         {conv.participants.filter((p: any) => p.isOnline).length}/{conv.participants.length} online
                       </Text>
                     )}

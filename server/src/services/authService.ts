@@ -131,4 +131,86 @@ export class AuthService {
       updatedAt: user.updatedAt,
     }));
   }
+
+  static async updateProfile(
+    userId: string, 
+    updates: { username?: string; email?: string }
+  ) {
+    const user = await User.findById(userId);
+
+    if (!user) {
+      throw new AppError('User not found', 404);
+    }
+
+    // Check if username is being changed and is already taken
+    if (updates.username && updates.username !== user.username) {
+      const existingUser = await User.findOne({ 
+        username: updates.username,
+        _id: { $ne: userId }
+      });
+      
+      if (existingUser) {
+        throw new AppError('Username already taken', 400);
+      }
+    }
+
+    // Check if email is being changed and is already taken
+    if (updates.email && updates.email !== user.email) {
+      const existingUser = await User.findOne({ 
+        email: updates.email,
+        _id: { $ne: userId }
+      });
+      
+      if (existingUser) {
+        throw new AppError('Email already registered', 400);
+      }
+    }
+
+    // Update user
+    if (updates.username) user.username = updates.username;
+    if (updates.email) user.email = updates.email;
+
+    await user.save();
+
+    // Generate new token with updated email if email was changed
+    const token = updates.email 
+      ? this.generateToken(String(user._id), user.email, user.role)
+      : undefined;
+
+    return {
+      user: {
+        id: String(user._id),
+        username: user.username,
+        email: user.email,
+        role: user.role,
+        avatar: user.avatar,
+        isOnline: user.isOnline,
+      },
+      token,
+    };
+  }
+
+  static async updatePassword(userId: string, currentPassword: string, newPassword: string) {
+    const user = await User.findById(userId).select('+password');
+
+    if (!user) {
+      throw new AppError('User not found', 404);
+    }
+
+    // Verify current password
+    const isPasswordValid = await user.comparePassword(currentPassword);
+
+    if (!isPasswordValid) {
+      throw new AppError('Current password is incorrect', 401);
+    }
+
+    // Update password
+    user.password = newPassword;
+    await user.save();
+
+    return {
+      success: true,
+      message: 'Password updated successfully',
+    };
+  }
 }

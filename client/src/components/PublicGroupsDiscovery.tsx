@@ -5,7 +5,8 @@ import { conversationApi } from '../api/conversations';
 import { notifications } from '@mantine/notifications';
 import { useDebouncedValue } from '@mantine/hooks';
 import { formatDistanceToNow } from 'date-fns';
-import { IconSearch, IconUsers } from '@tabler/icons-react';
+import { Search, Users } from 'lucide-react';
+import { getAvatarColor } from '../utils/avatarColor';
 
 interface PublicGroupsDiscoveryProps {
   opened: boolean;
@@ -58,7 +59,7 @@ export const PublicGroupsDiscovery = ({ opened, onClose }: PublicGroupsDiscovery
             setSearch(e.target.value);
             setPage(1); // Reset to first page on search
           }}
-          leftSection={<IconSearch size={16} />}
+          leftSection={<Search size={16} />}
         />
 
         <ScrollArea h={500}>
@@ -82,7 +83,7 @@ export const PublicGroupsDiscovery = ({ opened, onClose }: PublicGroupsDiscovery
                   }}
                   align="start"
                 >
-                  <Avatar size="lg" color="blue">
+                  <Avatar size="lg" color={getAvatarColor(group.groupName || 'Group')}>
                     {group.groupName[0]?.toUpperCase() || 'G'}
                   </Avatar>
                   
@@ -104,7 +105,7 @@ export const PublicGroupsDiscovery = ({ opened, onClose }: PublicGroupsDiscovery
 
                     <Group gap="md">
                       <Group gap={4}>
-                        <IconUsers size={14} />
+                        <Users size={14} />
                         <Text size="xs" c="dimmed">
                           {group.memberCount} {group.memberCount === 1 ? 'member' : 'members'}
                         </Text>

@@ -5,6 +5,7 @@ import { socketService } from '../lib/socket';
 import { notifications } from '@mantine/notifications';
 import { Invitation } from '../types';
 import { formatDistanceToNow } from 'date-fns';
+import { getAvatarColor } from '../utils/avatarColor';
 
 interface InvitationNotificationProps {
   opened: boolean;
@@ -85,7 +86,7 @@ export const InvitationNotification = ({ opened, onClose }: InvitationNotificati
                   }}
                   align="start"
                 >
-                  <Avatar size="lg">
+                  <Avatar size="lg" color={getAvatarColor(getConversationName(invitation))}>
                     {getConversationName(invitation)[0]?.toUpperCase() || 'G'}
                   </Avatar>
                   

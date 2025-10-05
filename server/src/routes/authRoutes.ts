@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { AuthController } from '../controllers/authController';
 import { authenticateToken } from '../middleware/auth';
-import { registerValidation, loginValidation } from '../middleware/validators';
+import { registerValidation, loginValidation, updateProfileValidation, updatePasswordValidation } from '../middleware/validators';
 
 const router = Router();
 
@@ -13,5 +13,7 @@ router.post('/login', loginValidation, AuthController.login);
 router.get('/profile', authenticateToken, AuthController.getProfile);
 router.get('/users', authenticateToken, AuthController.getAllUsers);
 router.post('/logout', authenticateToken, AuthController.logout);
+router.put('/profile', authenticateToken, updateProfileValidation, AuthController.updateProfile);
+router.put('/password', authenticateToken, updatePasswordValidation, AuthController.updatePassword);
 
 export default router;

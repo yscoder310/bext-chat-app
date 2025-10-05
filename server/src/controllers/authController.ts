@@ -90,4 +90,63 @@ export class AuthController {
       next(error);
     }
   }
+
+  static async updateProfile(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      if (!req.user) {
+        res.status(401).json({ error: 'Unauthorized' });
+        return;
+      }
+
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        res.status(400).json({ errors: errors.array() });
+        return;
+      }
+
+      const { username, email } = req.body;
+      const updates: { username?: string; email?: string } = {};
+      
+      if (username) updates.username = username;
+      if (email) updates.email = email;
+
+      const result = await AuthService.updateProfile(req.user.userId, updates);
+
+      res.status(200).json({
+        success: true,
+        data: result,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async updatePassword(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      if (!req.user) {
+        res.status(401).json({ error: 'Unauthorized' });
+        return;
+      }
+
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        res.status(400).json({ errors: errors.array() });
+        return;
+      }
+
+      const { currentPassword, newPassword } = req.body;
+      const result = await AuthService.updatePassword(
+        req.user.userId,
+        currentPassword,
+        newPassword
+      );
+
+      res.status(200).json({
+        success: true,
+        data: result,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
 }

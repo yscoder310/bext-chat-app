@@ -16,8 +16,24 @@ import {
   Menu,
   Modal,
   Button,
+  useMantineColorScheme,
+  useMantineTheme,
 } from '@mantine/core';
-import { IconSend, IconMoodSmile, IconPaperclip, IconUsers, IconEdit, IconCheck, IconX, IconDots, IconLogout, IconUserPlus, IconUserMinus, IconUserCheck, IconCrown } from '@tabler/icons-react';
+import { 
+  Send, 
+  Smile, 
+  Paperclip, 
+  Users, 
+  Edit, 
+  Check, 
+  X, 
+  MoreVertical, 
+  LogOut, 
+  UserPlus, 
+  UserMinus, 
+  UserCheck, 
+  Crown 
+} from 'lucide-react';
 import { 
   format, 
   isToday, 
@@ -29,6 +45,8 @@ import {
   differenceInSeconds
 } from 'date-fns';
 import { useChat } from '../hooks/useChat';
+import { getAvatarColor } from '../utils/avatarColor';
+import { getSetting } from './UserSettingsModal';
 import { useDisclosure } from '@mantine/hooks';
 import { InviteMembersModal } from './InviteMembersModal';
 import { useSocket } from '../hooks/useSocket';
@@ -37,19 +55,29 @@ import { GroupMembersModal } from './GroupMembersModal';
 import { EditGroupDetailsModal } from './EditGroupDetailsModal';
 
 const EmptyState = () => {
+  const theme = useMantineTheme();
+  const { colorScheme } = useMantineColorScheme();
+  const isDark = colorScheme === 'dark';
+
   return (
-    <Center style={{ height: '100vh', maxHeight: 'calc(100vh - 60px)', backgroundColor: '#f8f9fa' }}>
+    <Center style={{ 
+      height: '100vh', 
+      maxHeight: 'calc(100vh - 60px)', 
+      backgroundColor: isDark ? theme.colors.dark[7] : theme.colors.gray[0] 
+    }}>
       <Stack align="center" gap="xl">
         <Box
           style={{
             width: 120,
             height: 120,
             borderRadius: '50%',
-            backgroundColor: 'white',
+            backgroundColor: isDark ? theme.colors.dark[6] : 'white',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)',
+            boxShadow: isDark 
+              ? '0 4px 12px rgba(0, 0, 0, 0.5)' 
+              : '0 4px 12px rgba(0, 0, 0, 0.1)',
           }}
         >
           <svg
@@ -57,7 +85,7 @@ const EmptyState = () => {
             height="60"
             viewBox="0 0 24 24"
             fill="none"
-            stroke="#228be6"
+            stroke={theme.colors.blue[6]}
             strokeWidth="1.5"
             strokeLinecap="round"
             strokeLinejoin="round"
@@ -66,7 +94,7 @@ const EmptyState = () => {
           </svg>
         </Box>
         <Stack align="center" gap="xs">
-          <Text size="xl" fw={600} c="dark">
+          <Text size="xl" fw={600} c={isDark ? 'white' : 'dark'}>
             Welcome to Chat App
           </Text>
           <Text size="sm" c="dimmed" ta="center" maw={400}>
@@ -82,6 +110,10 @@ const EmptyState = () => {
 };
 
 export const ChatArea = () => {
+  const theme = useMantineTheme();
+  const { colorScheme } = useMantineColorScheme();
+  const isDark = colorScheme === 'dark';
+  
   const [message, setMessage] = useState('');
   const [isEditingGroupName, setIsEditingGroupName] = useState(false);
   const [editedGroupName, setEditedGroupName] = useState('');
@@ -416,7 +448,11 @@ export const ChatArea = () => {
 
   if (isLoadingMessages) {
     return (
-      <Center style={{ height: '100vh', maxHeight: 'calc(100vh - 60px)', backgroundColor: '#f8f9fa' }}>
+      <Center style={{ 
+        height: '100vh', 
+        maxHeight: 'calc(100vh - 60px)', 
+        backgroundColor: isDark ? theme.colors.dark[7] : theme.colors.gray[0] 
+      }}>
         <Stack align="center" gap="md">
           <Loader size="lg" color="blue" />
           <Text size="sm" c="dimmed">Loading messages...</Text>
@@ -429,7 +465,7 @@ export const ChatArea = () => {
     <Stack 
       gap={0} 
       style={{ 
-        backgroundColor: '#f8f9fa',
+        backgroundColor: isDark ? theme.colors.dark[7] : theme.colors.gray[0],
         height: '100vh',
         maxHeight: 'calc(100vh - 60px)',
         overflow: 'hidden',
@@ -441,8 +477,8 @@ export const ChatArea = () => {
         shadow="sm" 
         radius={0}
         style={{
-          borderBottom: '1px solid #dee2e6',
-          backgroundColor: '#ffffff',
+          borderBottom: `1px solid ${isDark ? theme.colors.dark[5] : theme.colors.gray[3]}`,
+          backgroundColor: isDark ? theme.colors.dark[6] : 'white',
           flexShrink: 0,
         }}
       >
@@ -452,10 +488,10 @@ export const ChatArea = () => {
               <Avatar 
                 size={48}
                 radius="xl"
-                color="blue"
+                color={getAvatarColor(getConversationDisplayName())}
                 styles={{
                   root: {
-                    border: '2px solid #e9ecef',
+                    border: `2px solid ${isDark ? theme.colors.dark[4] : theme.colors.gray[2]}`,
                   }
                 }}
               >
@@ -515,7 +551,7 @@ export const ChatArea = () => {
                         }
                       }}
                     >
-                      <IconCheck size={18} />
+                      <Check size={18} />
                     </ActionIcon>
                     <ActionIcon 
                       color="red" 
@@ -525,7 +561,7 @@ export const ChatArea = () => {
                         setEditedGroupName(activeConversation.groupName || '');
                       }}
                     >
-                      <IconX size={18} />
+                      <X size={18} />
                     </ActionIcon>
                   </Group>
                 ) : (
@@ -543,7 +579,7 @@ export const ChatArea = () => {
                             setIsEditingGroupName(true);
                           }}
                         >
-                          <IconEdit size={16} />
+                          <Edit size={16} />
                         </ActionIcon>
                       </Tooltip>
                     )}
@@ -597,7 +633,7 @@ export const ChatArea = () => {
                   size="lg"
                   onClick={openMembersModal}
                 >
-                  <IconUsers size={20} />
+                  <Users size={20} />
                 </ActionIcon>
               </Tooltip>
               <Menu shadow="md" width={200}>
@@ -607,7 +643,7 @@ export const ChatArea = () => {
                       variant="subtle" 
                       size="lg"
                     >
-                      <IconDots size={20} />
+                      <MoreVertical size={20} />
                     </ActionIcon>
                   </Tooltip>
                 </Menu.Target>
@@ -615,13 +651,13 @@ export const ChatArea = () => {
                   {isCurrentUserAdmin() && (
                     <>
                       <Menu.Item 
-                        leftSection={<IconEdit size={16} />}
+                        leftSection={<Edit size={16} />}
                         onClick={openEditDetails}
                       >
                         Edit Group Details
                       </Menu.Item>
                       <Menu.Item 
-                        leftSection={<IconUserPlus size={16} />}
+                        leftSection={<UserPlus size={16} />}
                         onClick={openInviteMembers}
                       >
                         Invite Members
@@ -629,7 +665,7 @@ export const ChatArea = () => {
                     </>
                   )}
                   <Menu.Item 
-                    leftSection={<IconLogout size={16} />}
+                    leftSection={<LogOut size={16} />}
                     color="red"
                     onClick={() => setLeaveGroupConfirm(true)}
                   >
@@ -647,10 +683,15 @@ export const ChatArea = () => {
         style={{ 
           flex: 1, 
           minHeight: 0,
-          backgroundImage: `
-            linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%),
-            repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(255,255,255,.03) 10px, rgba(255,255,255,.03) 20px)
-          `,
+          backgroundImage: isDark
+            ? `
+              linear-gradient(135deg, ${theme.colors.dark[7]} 0%, ${theme.colors.dark[8]} 100%),
+              repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(255,255,255,.02) 10px, rgba(255,255,255,.02) 20px)
+            `
+            : `
+              linear-gradient(135deg, ${theme.colors.gray[0]} 0%, ${theme.colors.gray[1]} 100%),
+              repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(255,255,255,.03) 10px, rgba(255,255,255,.03) 20px)
+            `,
           backgroundBlendMode: 'overlay',
         }} 
         p="md"
@@ -673,24 +714,24 @@ export const ChatArea = () => {
               
               switch (msg.systemMessageType) {
                 case 'member-added':
-                  icon = <IconUserPlus size={14} />;
+                  icon = <UserPlus size={14} />;
                   iconColor = '#40c057';
                   break;
                 case 'member-left':
                 case 'member-removed':
-                  icon = <IconUserMinus size={14} />;
+                  icon = <UserMinus size={14} />;
                   iconColor = '#fa5252';
                   break;
                 case 'admin-promoted':
-                  icon = <IconCrown size={14} />;
+                  icon = <Crown size={14} />;
                   iconColor = '#fab005';
                   break;
                 case 'group-created':
-                  icon = <IconUsers size={14} />;
+                  icon = <Users size={14} />;
                   iconColor = '#228be6';
                   break;
                 default:
-                  icon = <IconUserCheck size={14} />;
+                  icon = <UserCheck size={14} />;
               }
 
               return (
@@ -700,8 +741,8 @@ export const ChatArea = () => {
                     px="md"
                     radius="xl"
                     style={{
-                      backgroundColor: '#f8f9fa',
-                      border: '1px solid #e9ecef',
+                      backgroundColor: isDark ? theme.colors.dark[6] : theme.colors.gray[0],
+                      border: `1px solid ${isDark ? theme.colors.dark[5] : theme.colors.gray[2]}`,
                       maxWidth: '80%',
                     }}
                   >
@@ -783,7 +824,11 @@ export const ChatArea = () => {
                     <Avatar 
                       size={36} 
                       radius="xl" 
-                      color="blue"
+                      color={getAvatarColor(
+                        typeof msg.senderId === 'string' 
+                          ? 'User' 
+                          : msg.senderId.username
+                      )}
                       style={{
                         flexShrink: 0,
                         boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
@@ -799,16 +844,22 @@ export const ChatArea = () => {
                   radius="md"
                   shadow="sm"
                   style={{
-                    backgroundColor: isOwn ? '#228be6' : 'white',
-                    color: isOwn ? 'white' : 'black',
+                    backgroundColor: isOwn 
+                      ? theme.colors.blue[6] 
+                      : (isDark ? theme.colors.dark[6] : 'white'),
+                    color: isOwn ? 'white' : (isDark ? theme.colors.gray[0] : 'black'),
                     maxWidth: '65%',
-                    border: isOwn ? 'none' : '1px solid #e9ecef',
+                    border: isOwn 
+                      ? 'none' 
+                      : `1px solid ${isDark ? theme.colors.dark[5] : theme.colors.gray[2]}`,
                     wordBreak: 'break-word',
                     marginLeft: isOwn ? 'auto' : '0',
                     marginRight: isOwn ? '0' : 'auto',
                     boxShadow: isOwn 
                       ? '0 4px 12px rgba(34, 139, 230, 0.25)' 
-                      : '0 2px 8px rgba(0, 0, 0, 0.08)',
+                      : (isDark 
+                        ? '0 2px 8px rgba(0, 0, 0, 0.3)' 
+                        : '0 2px 8px rgba(0, 0, 0, 0.08)'),
                     position: 'relative',
                   }}
                 >
@@ -817,7 +868,7 @@ export const ChatArea = () => {
                     <Text 
                       size="xs" 
                       fw={600} 
-                      c="#228be6"
+                      c={isDark ? theme.colors.blue[4] : theme.colors.blue[6]}
                       mb={4}
                       style={{
                         letterSpacing: '0.3px',
@@ -882,8 +933,8 @@ export const ChatArea = () => {
         shadow="md"
         radius={0}
         style={{
-          borderTop: '1px solid #dee2e6',
-          backgroundColor: 'white',
+          borderTop: `1px solid ${isDark ? theme.colors.dark[5] : theme.colors.gray[3]}`,
+          backgroundColor: isDark ? theme.colors.dark[6] : 'white',
           flexShrink: 0,
         }}
       >
@@ -903,35 +954,51 @@ export const ChatArea = () => {
               e.currentTarget.style.transform = 'scale(1)';
             }}
           >
-            <IconPaperclip size={20} />
+            <Paperclip size={20} />
           </ActionIcon>
           
           <TextInput
             placeholder="Type a message..."
             value={message}
             onChange={handleTyping}
-            onKeyPress={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                handleSend();
+            onKeyDown={(e) => {
+              const enterToSend = getSetting('enterToSend') as boolean;
+              
+              if (e.key === 'Enter') {
+                if (enterToSend) {
+                  // Enter to send mode: Enter sends (unless Shift is held)
+                  if (!e.shiftKey) {
+                    e.preventDefault();
+                    handleSend();
+                  }
+                  // Shift+Enter does nothing (allows default new line behavior)
+                } else {
+                  // Ctrl+Enter to send mode: Enter does nothing, Ctrl+Enter sends
+                  if (e.ctrlKey || e.metaKey) {
+                    e.preventDefault();
+                    handleSend();
+                  }
+                  // Plain Enter allows default new line behavior
+                }
               }
             }}
             radius="xl"
             size="md"
             styles={{
               input: {
-                border: '2px solid #e9ecef',
-                backgroundColor: '#f8f9fa',
+                border: `2px solid ${isDark ? theme.colors.dark[4] : theme.colors.gray[2]}`,
+                backgroundColor: isDark ? theme.colors.dark[7] : theme.colors.gray[0],
+                color: isDark ? theme.colors.gray[0] : 'black',
                 fontSize: '14px',
                 padding: '12px 18px',
                 transition: 'all 0.2s ease',
                 '&:focus': {
-                  borderColor: '#228be6',
-                  backgroundColor: 'white',
-                  boxShadow: '0 0 0 3px rgba(34, 139, 230, 0.1)',
+                  borderColor: theme.colors.blue[6],
+                  backgroundColor: isDark ? theme.colors.dark[6] : 'white',
+                  boxShadow: `0 0 0 3px ${isDark ? 'rgba(34, 139, 230, 0.15)' : 'rgba(34, 139, 230, 0.1)'}`,
                 },
                 '&::placeholder': {
-                  color: '#adb5bd',
+                  color: isDark ? theme.colors.dark[2] : theme.colors.gray[5],
                 },
               },
             }}
@@ -953,7 +1020,7 @@ export const ChatArea = () => {
               e.currentTarget.style.transform = 'scale(1)';
             }}
           >
-            <IconMoodSmile size={20} />
+            <Smile size={20} />
           </ActionIcon>
           
           <ActionIcon 
@@ -969,8 +1036,8 @@ export const ChatArea = () => {
             styles={{
               root: {
                 '&:disabled': {
-                  backgroundColor: '#e9ecef',
-                  color: '#adb5bd',
+                  backgroundColor: isDark ? theme.colors.dark[5] : theme.colors.gray[2],
+                  color: isDark ? theme.colors.dark[2] : theme.colors.gray[5],
                 },
                 '&:not(:disabled):hover': {
                   transform: 'scale(1.05)',
@@ -979,7 +1046,7 @@ export const ChatArea = () => {
               },
             }}
           >
-            <IconSend size={20} />
+            <Send size={20} />
           </ActionIcon>
         </Group>
       </Paper>
