@@ -15,8 +15,8 @@ interface AuthenticatedSocket extends Socket {
   user?: JWTPayload;
 }
 
-// Track online users: userId -> socketId
-const onlineUsers: Record<string, string> = {};
+// Track online users: userId -> Set of socketIds (allows multiple connections per user)
+const onlineUsers: Record<string, Set<string>> = {};
 
 // Track typing timeouts: conversationId -> userId -> timeout
 const typingTimeouts: Record<string, Record<string, NodeJS.Timeout>> = {};
@@ -96,25 +96,55 @@ export const initializeSocket = (httpServer: HTTPServer) => {
   const chatNamespace = io.of('/chat');
   chatNamespace.use(authenticateSocket);
 
-  chatNamespace.on('connection', (socket: AuthenticatedSocket) => {
+  chatNamespace.on('connection', async (socket: AuthenticatedSocket) => {
     if (!socket.user) return;
 
     const userId = socket.user.userId;
     logSocketConnection(userId, socket.id);
 
-    // Track online status
-    onlineUsers[userId] = socket.id;
-    AuthService.updateOnlineStatus(userId, true);
+    // Track online status - support multiple connections (tabs/browsers) per user
+    if (!onlineUsers[userId]) {
+      onlineUsers[userId] = new Set();
+    }
+    onlineUsers[userId].add(socket.id);
+    
+    // Only update database and broadcast if this is the first connection for this user
+    const isFirstConnection = onlineUsers[userId].size === 1;
+    if (isFirstConnection) {
+      AuthService.updateOnlineStatus(userId, true);
+      chatNamespace.emit('user-online', { userId });
+    }
 
-    // Join user's personal room and broadcast online status
+    // Join user's personal room
     socket.join(`user:${userId}`);
-    chatNamespace.emit('user-online', { userId });
+
+    // Auto-join all conversation rooms for this user for instant message delivery
+    try {
+      const Conversation = (await import('../models/Conversation')).default;
+      
+      // Get raw conversation IDs (not formatted) for room joining
+      const conversations = await Conversation.find({
+        participants: userId,
+      }).select('_id').lean();
+      
+      conversations.forEach((conversation: any) => {
+        const roomName = `conversation:${conversation._id}`;
+        socket.join(roomName);
+        console.log(`[Socket] User ${userId} auto-joined room: ${roomName}`);
+      });
+      
+      console.log(`[Socket] User ${userId} auto-joined ${conversations.length} conversation rooms`);
+    } catch (error) {
+      console.error('[Socket] Failed to auto-join conversation rooms:', error);
+    }
 
     /**
      * Join a conversation room
      */
     socket.on('join-conversation', (conversationId: string) => {
       socket.join(`conversation:${conversationId}`);
+      logSocketEvent('join-conversation', userId, { conversationId });
+      console.log(`[Socket] User ${userId} joined conversation:${conversationId}`);
     });
 
     /**
@@ -122,6 +152,8 @@ export const initializeSocket = (httpServer: HTTPServer) => {
      */
     socket.on('leave-conversation', (conversationId: string) => {
       socket.leave(`conversation:${conversationId}`);
+      logSocketEvent('leave-conversation', userId, { conversationId });
+      console.log(`[Socket] User ${userId} left conversation:${conversationId}`);
     });
 
     /**
@@ -133,6 +165,8 @@ export const initializeSocket = (httpServer: HTTPServer) => {
       messageType?: 'text' | 'image' | 'file';
     }) => {
       try {
+        console.log(`[Socket] User ${userId} sending message to conversation:${data.conversationId}`);
+        
         const message = await MessageService.sendMessage(
           data.conversationId,
           userId,
@@ -140,6 +174,8 @@ export const initializeSocket = (httpServer: HTTPServer) => {
           data.messageType || 'text'
         );
 
+        console.log(`[Socket] Broadcasting message to conversation:${data.conversationId} room`);
+        
         // Emit to all participants in the conversation room
         emitToConversation(chatNamespace, data.conversationId, 'new-message', message);
         
@@ -148,6 +184,7 @@ export const initializeSocket = (httpServer: HTTPServer) => {
         
         logSocketEvent('send-message', userId, { conversationId: data.conversationId, messageType: data.messageType });
       } catch (error: any) {
+        console.error(`[Socket] Error sending message:`, error);
         logSocketError('send-message', userId, error);
         socket.emit('message-error', { error: error.message });
       }
@@ -157,14 +194,18 @@ export const initializeSocket = (httpServer: HTTPServer) => {
      * User started typing
      */
     socket.on('typing-start', (data: { conversationId: string }) => {
+      console.log(`[Socket] User ${userId} started typing in conversation:${data.conversationId}`);
+      
       // Clear any existing timeout
       clearTyping(chatNamespace, data.conversationId, userId);
 
-      // Broadcast typing indicator
+      // Broadcast typing indicator to all OTHER users in the conversation room
       socket.to(`conversation:${data.conversationId}`).emit('user-typing', {
         userId,
         conversationId: data.conversationId,
       });
+
+      logSocketEvent('typing-start', userId, { conversationId: data.conversationId });
 
       // Auto-clear after 5 seconds
       if (!typingTimeouts[data.conversationId]) {
@@ -180,7 +221,9 @@ export const initializeSocket = (httpServer: HTTPServer) => {
      * User stopped typing
      */
     socket.on('typing-stop', (data: { conversationId: string }) => {
+      console.log(`[Socket] User ${userId} stopped typing in conversation:${data.conversationId}`);
       clearTyping(chatNamespace, data.conversationId, userId);
+      logSocketEvent('typing-stop', userId, { conversationId: data.conversationId });
     });
 
     /**
@@ -224,8 +267,9 @@ export const initializeSocket = (httpServer: HTTPServer) => {
      * Get list of online users
      */
     socket.on('get-online-users', () => {
-      logSocketEvent('get-online-users', userId, { count: Object.keys(onlineUsers).length });
-      socket.emit('online-users', Object.keys(onlineUsers));
+      const onlineUserIds = Object.keys(onlineUsers).filter(uid => onlineUsers[uid].size > 0);
+      logSocketEvent('get-online-users', userId, { count: onlineUserIds.length });
+      socket.emit('online-users', onlineUserIds);
     });
 
     /**
@@ -312,12 +356,17 @@ export const initializeSocket = (httpServer: HTTPServer) => {
         }
       });
 
-      // Update online status
-      delete onlineUsers[userId];
-      await AuthService.updateOnlineStatus(userId, false);
-      
-      // Broadcast offline status
-      chatNamespace.emit('user-offline', { userId });
+      // Remove this socket from user's connections
+      if (onlineUsers[userId]) {
+        onlineUsers[userId].delete(socket.id);
+        
+        // Only update status and broadcast if this was the last connection
+        if (onlineUsers[userId].size === 0) {
+          delete onlineUsers[userId];
+          await AuthService.updateOnlineStatus(userId, false);
+          chatNamespace.emit('user-offline', { userId });
+        }
+      }
     });
   });
 
